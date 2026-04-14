@@ -28,6 +28,13 @@ import soundfile as sf
 import torch
 from silero_vad import load_silero_vad
 
+from rich.console import Console, Group
+from rich.live import Live
+from rich.padding import Padding
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
 # ──────────────────────────────────────────────
 # Config
 # ──────────────────────────────────────────────
@@ -38,13 +45,19 @@ DEFAULT_MLS_URL = "http://127.0.0.1:18321"
 SAMPLE_RATE = 16000
 VAD_FRAME_SAMPLES = 512           # Silero requires exactly 512 samples @ 16kHz (~32ms)
 VAD_FRAME_MS = VAD_FRAME_SAMPLES * 1000 // SAMPLE_RATE
-VAD_THRESHOLD = 0.5               # speech probability cutoff
-SPEECH_START_FRAMES = 3           # ~96ms of voiced frames to trigger start
-SPEECH_END_MS = 300               # trailing silence to end an utterance (tight for low latency)
+# VAD thresholds with hysteresis — avoid rapid toggling when speech probability
+# hovers around the boundary. Start > stop by VAD_HYSTERESIS is the pattern
+# recommended by Silero FAQ / Pipecat / LiveKit.
+VAD_THRESHOLD = 0.5               # start-of-speech threshold (Silero default)
+VAD_HYSTERESIS = 0.15             # gap below start threshold to end speech
+VAD_STOP_THRESHOLD = max(0.0, VAD_THRESHOLD - VAD_HYSTERESIS)
+
+SPEECH_START_FRAMES = 3           # ~96 ms of voiced frames to trigger start
+SPEECH_END_MS = 500               # trailing silence to end an utterance (industry-standard balance)
 PRE_ROLL_MS = 200                 # audio kept before speech start
 MIN_UTTERANCE_MS = 300            # drop anything shorter
 MAX_UTTERANCE_S = 15              # safety cap for run-on speech
-PARTIAL_INTERVAL_S = 0.8          # emit a rolling partial every N seconds during speech
+PARTIAL_INTERVAL_S = 0.6          # rolling partial cadence (~500 ms is industry norm)
 PARTIAL_MIN_GROWTH_S = 0.3        # only re-ASR if buffer grew by this much
 OLLAMA_KEEP_ALIVE = "24h"         # keep LLM resident
 TRANSLATE_SYSTEM_PROMPT = """\
@@ -59,6 +72,247 @@ Rules:
 
 
 # ──────────────────────────────────────────────
+# UI (rich Live + bottom status bar)
+# ──────────────────────────────────────────────
+
+LEVEL_BARS = "▁▂▃▄▅▆▇█"
+LEVEL_HISTORY = 28
+
+STATE_LABELS = {
+    "booting":      ("[dim]○[/]",         "dim",     "booting"),
+    "listening":    ("[cyan]●[/]",        "cyan",    "listening"),
+    "speaking":     ("[green]●[/]",       "green",   "speaking"),
+    "transcribing": ("[magenta]◐[/]",     "magenta", "transcribing"),
+    "translating":  ("[yellow]◑[/]",      "yellow",  "translating"),
+}
+
+
+class _StatusRenderable:
+    """Thin wrapper so Live re-reads UI state on every refresh tick."""
+
+    def __init__(self, ui: "TranslatorUI"):
+        self.ui = ui
+
+    def __rich__(self):
+        return self.ui._render_status()
+
+
+class TranslatorUI:
+    """Terminal UX: rich Live bottom status bar + cards for finalized utterances."""
+
+    def __init__(
+        self,
+        *,
+        target_lang: str,
+        asr_lang: str | None,
+        asr_model: str,
+        llm_model: str,
+        vad_threshold: float,
+        end_silence_ms: int,
+        partial_interval_s: float,
+    ):
+        self.console = Console(highlight=False)
+        self.target_lang = target_lang
+        self.asr_lang = asr_lang
+        self.asr_model = asr_model
+        self.llm_model = llm_model
+        self.vad_threshold = vad_threshold
+        self.end_silence_ms = end_silence_ms
+        self.partial_interval_s = partial_interval_s
+
+        self._lock = threading.Lock()
+        self._state = "booting"
+        self._vad_history: deque[float] = deque([0.0] * LEVEL_HISTORY, maxlen=LEVEL_HISTORY)
+        self._partial_asr = ""
+        self._partial_translation = ""
+        self._seg_count = 0
+        self._sum_asr_ms = 0.0
+        self._sum_llm_ms = 0.0
+        self._start_time = time.monotonic()
+        self._live: Live | None = None
+
+    # ── pre-Live logging (also usable while Live is active) ──
+
+    def info(self, msg: str):
+        self.console.print(f"[dim]·[/] [dim]{msg}[/]")
+
+    def ok(self, msg: str):
+        self.console.print(f"[green]✓[/] [dim]{msg}[/]")
+
+    def warn(self, msg: str):
+        self.console.print(f"[yellow]![/] {msg}")
+
+    def err(self, msg: str):
+        self.console.print(f"[red]✗[/] {msg}")
+
+    def print_banner(self):
+        title = Text("🎤  Local Real-Time Translator", style="bold cyan", justify="center")
+        body = Table.grid(padding=(0, 2))
+        body.add_column(style="dim", justify="right")
+        body.add_column()
+        body.add_row("source", f"{self.asr_lang or 'auto'}  →  [bold]{self.target_lang}[/]")
+        body.add_row("asr", self.asr_model)
+        body.add_row("llm", self.llm_model)
+        body.add_row(
+            "vad",
+            f"threshold={self.vad_threshold}  end-silence={self.end_silence_ms}ms  "
+            f"partial={self.partial_interval_s}s",
+        )
+        self.console.print(Panel(Group(title, Text(""), body), border_style="cyan", padding=(0, 2)))
+        self.console.print()
+
+    # ── state mutations (called from VAD / pipeline threads) ──
+
+    def set_state(self, state: str):
+        with self._lock:
+            self._state = state
+
+    def push_vad_level(self, prob: float):
+        with self._lock:
+            self._vad_history.append(max(0.0, min(1.0, prob)))
+
+    def set_partial_asr(self, text: str):
+        with self._lock:
+            self._partial_asr = text
+
+    def set_partial_translation(self, text: str):
+        with self._lock:
+            self._partial_translation = text
+
+    def clear_partial(self):
+        with self._lock:
+            self._partial_asr = ""
+            self._partial_translation = ""
+
+    # ── finalized utterance card (printed above the Live region) ──
+
+    def log_utterance(self, asr_text: str, translation: str, asr_ms: float, llm_ms: float):
+        with self._lock:
+            self._seg_count += 1
+            self._sum_asr_ms += asr_ms
+            self._sum_llm_ms += llm_ms
+            idx = self._seg_count
+        ts = time.strftime("%H:%M:%S")
+
+        header = Text.assemble(
+            ("  ", ""),
+            (f"[{ts}]", "dim"),
+            ("  ", ""),
+            (f"#{idx}", "bold dim"),
+        )
+        src = Text.assemble(("  src  ", "cyan bold"), (asr_text, "white"))
+        tra = Text.assemble(("  ▸    ", "yellow bold"), (translation, "bold yellow"))
+        meta = Text(
+            f"         ASR {asr_ms:.0f}ms  ·  LLM {llm_ms:.0f}ms",
+            style="dim",
+        )
+        self.console.print(Group(header, src, tra, meta, Text("")))
+
+    # ── status bar rendering ──
+
+    def _level_bar(self) -> Text:
+        bars_n = len(LEVEL_BARS)
+        threshold = self.vad_threshold
+        out = Text()
+        for p in self._vad_history:
+            ch = LEVEL_BARS[min(bars_n - 1, int(p * bars_n))]
+            style = "green" if p >= threshold else ("cyan" if p > 0.15 else "dim")
+            out.append(ch, style=style)
+        return out
+
+    def _elapsed(self) -> str:
+        t = int(time.monotonic() - self._start_time)
+        h, rem = divmod(t, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}h{m:02d}m{s:02d}s" if h else f"{m}m{s:02d}s"
+
+    def _render_status(self) -> Panel:
+        with self._lock:
+            state = self._state
+            partial_asr = self._partial_asr
+            partial_tr = self._partial_translation
+            count = self._seg_count
+            avg_asr = self._sum_asr_ms / count if count else 0.0
+            avg_llm = self._sum_llm_ms / count if count else 0.0
+            level = self._level_bar()
+
+        icon, border, label = STATE_LABELS.get(state, STATE_LABELS["listening"])
+
+        top = Table.grid(expand=True)
+        top.add_column(ratio=1)
+        top.add_column(justify="right")
+        top.add_row(
+            Text.from_markup(f"{icon}  [bold]{label}[/]  ") + level,
+            Text.from_markup(f"[dim]{self._elapsed()}  ·  {count} utts[/]"),
+        )
+
+        active = bool(partial_asr or partial_tr) or state in ("speaking", "transcribing", "translating")
+
+        src_prefix = Text.from_markup("[cyan bold]src[/]  ")
+        tra_prefix = Text.from_markup("[yellow bold]▸  [/]  ")
+
+        if partial_asr:
+            src_body = Text(partial_asr, style="white", no_wrap=True, overflow="ellipsis")
+        elif active:
+            src_body = Text.from_markup("[dim]…[/]")
+        else:
+            src_body = Text.from_markup("[dim](waiting for speech — Ctrl+C to quit)[/]")
+
+        if partial_tr:
+            tra_body = Text(partial_tr, style="bold yellow", no_wrap=True, overflow="ellipsis")
+        elif active:
+            tra_body = Text.from_markup("[dim]…[/]")
+        else:
+            tra_body = Text.from_markup("[dim]—[/]")
+
+        src_line = src_prefix + src_body
+        tra_line = tra_prefix + tra_body
+
+        if count:
+            stats = Text.from_markup(
+                f"[dim]avg  ASR {avg_asr:.0f}ms  ·  LLM {avg_llm:.0f}ms[/]"
+            )
+        else:
+            stats = Text.from_markup("[dim]avg  —[/]")
+
+        body = Group(top, src_line, tra_line, stats)
+        return Panel(body, border_style=border, padding=(0, 1), title=None, height=6)
+
+    # ── Live lifecycle ──
+
+    def __enter__(self):
+        self._start_time = time.monotonic()
+        self._live = Live(
+            _StatusRenderable(self),
+            console=self.console,
+            refresh_per_second=15,
+            transient=False,
+        )
+        self._live.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+
+    def print_summary(self):
+        with self._lock:
+            count = self._seg_count
+            avg_asr = self._sum_asr_ms / count if count else 0.0
+            avg_llm = self._sum_llm_ms / count if count else 0.0
+            elapsed = self._elapsed()
+        if count:
+            body = Text.from_markup(
+                f"[green]✓[/] Translated [bold]{count}[/] utterances in [bold]{elapsed}[/]\n"
+                f"[dim]avg  ASR {avg_asr:.0f}ms  ·  LLM {avg_llm:.0f}ms[/]"
+            )
+        else:
+            body = Text.from_markup(f"[dim]No utterances. Ran for {elapsed}.[/]")
+        self.console.print(Panel(body, title="[bold green]Session Summary[/]", border_style="green"))
+
+
+# ──────────────────────────────────────────────
 # Audio capture
 # ──────────────────────────────────────────────
 
@@ -67,19 +321,25 @@ class VADSegmenter:
 
     def __init__(
         self,
+        ui: TranslatorUI,
         sample_rate: int = SAMPLE_RATE,
-        threshold: float = VAD_THRESHOLD,
+        start_threshold: float = VAD_THRESHOLD,
+        stop_threshold: float | None = None,
     ):
+        self.ui = ui
         self.sample_rate = sample_rate
-        self.threshold = threshold
-        print("[vad] Loading Silero VAD...")
+        self.start_threshold = start_threshold
+        self.stop_threshold = (
+            stop_threshold
+            if stop_threshold is not None
+            else max(0.0, start_threshold - VAD_HYSTERESIS)
+        )
         self.model = load_silero_vad()
-        print("[vad] Ready.")
         self.q: queue.Queue[np.ndarray] = queue.Queue()
 
     def _callback(self, indata, frames, time_info, status):
         if status:
-            print(f"[audio] {status}", file=sys.stderr)
+            self.ui.warn(f"audio: {status}")
         self.q.put(indata[:, 0].copy())
 
     def _frames(self):
@@ -92,10 +352,9 @@ class VADSegmenter:
                 yield buf[:VAD_FRAME_SAMPLES].copy()
                 buf = buf[VAD_FRAME_SAMPLES:]
 
-    def _is_speech(self, frame: np.ndarray) -> bool:
+    def _prob(self, frame: np.ndarray) -> float:
         with torch.no_grad():
-            prob = self.model(torch.from_numpy(frame), self.sample_rate).item()
-        return prob >= self.threshold
+            return self.model(torch.from_numpy(frame), self.sample_rate).item()
 
     def events(self):
         """Yield ('partial', audio) during speech and ('final', audio) at end-of-speech."""
@@ -120,11 +379,17 @@ class VADSegmenter:
             blocksize=VAD_FRAME_SAMPLES,
             callback=self._callback,
         ):
-            print("[mic] Listening... (Ctrl+C to stop)\n")
+            self.ui.set_state("listening")
             for frame in self._frames():
-                is_speech = self._is_speech(frame)
+                prob = self._prob(frame)
+                self.ui.push_vad_level(prob)
 
+                # Hysteresis: use the HIGHER start threshold to decide when
+                # speech begins, and the LOWER stop threshold to decide
+                # silence while already in a speech region. Prevents rapid
+                # toggling around a single boundary.
                 if not triggered:
+                    is_speech = prob >= self.start_threshold
                     pre_roll.append(frame)
                     if is_speech:
                         voiced_run += 1
@@ -135,11 +400,13 @@ class VADSegmenter:
                             silence_run = 0
                             last_partial_ts = time.monotonic()
                             last_partial_frames = len(voiced)
+                            self.ui.set_state("speaking")
                     else:
                         voiced_run = 0
                 else:
+                    is_still_speech = prob >= self.stop_threshold
                     voiced.append(frame)
-                    if is_speech:
+                    if is_still_speech:
                         silence_run = 0
                     else:
                         silence_run += 1
@@ -165,6 +432,7 @@ class VADSegmenter:
                         silence_run = 0
                         last_partial_frames = 0
                         pre_roll.clear()
+                        self.ui.set_state("listening")
 
 
 # ──────────────────────────────────────────────
@@ -176,10 +444,12 @@ class MlsASRClient:
 
     def __init__(
         self,
+        ui: TranslatorUI,
         base_url: str = DEFAULT_MLS_URL,
         language: str | None = None,
         sample_rate: int = SAMPLE_RATE,
     ):
+        self.ui = ui
         self.api = f"{base_url.rstrip('/')}/transcribe"
         self.language = language
         self.sample_rate = sample_rate
@@ -188,10 +458,9 @@ class MlsASRClient:
     def _check(self, base_url: str):
         try:
             requests.get(base_url, timeout=5)
-            print(f"[mls] Connected: {base_url}")
         except requests.ConnectionError:
-            print(f"[mls] ERROR: Cannot reach mls at {base_url}", file=sys.stderr)
-            print("[mls] Start it with: mls serve --asr Qwen/Qwen3-ASR-1.7B-8bit", file=sys.stderr)
+            self.ui.err(f"Cannot reach mls at {base_url}")
+            self.ui.info("Start it with: mls serve --asr Qwen/Qwen3-ASR-1.7B-8bit")
             sys.exit(1)
 
     def transcribe(self, audio: np.ndarray) -> str:
@@ -224,10 +493,12 @@ class OllamaTranslator:
 
     def __init__(
         self,
+        ui: TranslatorUI,
         model: str = DEFAULT_OLLAMA_MODEL,
         base_url: str = DEFAULT_OLLAMA_URL,
         target_lang: str = "Chinese",
     ):
+        self.ui = ui
         self.model = model
         self.api = f"{base_url}/api/chat"
         self.system_prompt = TRANSLATE_SYSTEM_PROMPT.format(target_lang=target_lang)
@@ -239,25 +510,21 @@ class OllamaTranslator:
         try:
             r = requests.get(f"{base_url}/api/tags", timeout=5)
             models = [m["name"] for m in r.json().get("models", [])]
-            # Match with or without tag
             matched = any(
                 self.model in m or self.model.split(":")[0] in m for m in models
             )
-            if matched:
-                print(f"[ollama] Model '{self.model}' found.")
-            else:
-                print(f"[ollama] WARNING: '{self.model}' not found locally.")
-                print(f"[ollama] Available: {models}")
-                print(f"[ollama] Run: ollama pull {self.model}")
+            if not matched:
+                self.ui.err(f"Ollama model '{self.model}' not found locally")
+                self.ui.info(f"Available: {', '.join(models) or '(none)'}")
+                self.ui.info(f"Run: ollama pull {self.model}")
                 sys.exit(1)
         except requests.ConnectionError:
-            print("[ollama] ERROR: Cannot connect to Ollama at localhost:11434")
-            print("[ollama] Run: ollama serve")
+            self.ui.err("Cannot connect to Ollama at localhost:11434")
+            self.ui.info("Run: ollama serve")
             sys.exit(1)
 
     def _warmup(self):
         """Force Ollama to load the model so the first real request isn't cold."""
-        print(f"[ollama] Warming up '{self.model}'...")
         try:
             requests.post(
                 self.api,
@@ -271,9 +538,8 @@ class OllamaTranslator:
                 },
                 timeout=120,
             )
-            print("[ollama] Ready.")
         except Exception as e:
-            print(f"[ollama] Warmup failed: {e}", file=sys.stderr)
+            self.ui.warn(f"Ollama warmup failed: {e}")
 
     def translate(self, text: str) -> str:
         """Send text to Ollama, return translation. Non-streaming for simplicity."""
@@ -336,18 +602,18 @@ class OllamaTranslator:
 # ──────────────────────────────────────────────
 
 class PartialPipeline:
-    """Background worker: ASR + non-streaming LLM translate on the latest partial audio,
-    redraws the partial line in-place with \\r. Drops stale work when new audio arrives."""
+    """Background worker: ASR + non-streaming LLM translate on the latest partial audio.
+    Publishes results into the UI status bar. Drops stale work when new audio arrives."""
 
-    def __init__(self, asr, translator):
+    def __init__(self, asr: MlsASRClient, translator: OllamaTranslator, ui: TranslatorUI):
         self.asr = asr
         self.translator = translator
+        self.ui = ui
         self._latest: np.ndarray | None = None
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._frozen = threading.Event()
-        self._display_lock = threading.Lock()
         self._last_text = ""
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -358,11 +624,8 @@ class PartialPipeline:
         self._wake.set()
 
     def freeze(self):
-        """Stop accepting partials and block until worker is idle. Call before final output."""
+        """Stop accepting partials. Call before final output."""
         self._frozen.set()
-        # Grab the display lock to ensure no in-flight write is ongoing.
-        with self._display_lock:
-            pass
 
     def reset(self):
         """Prepare for the next utterance."""
@@ -370,6 +633,7 @@ class PartialPipeline:
         self._last_text = ""
         with self._lock:
             self._latest = None
+        self.ui.clear_partial()
 
     def shutdown(self):
         self._stop.set()
@@ -392,38 +656,13 @@ class PartialPipeline:
                 if self._frozen.is_set() or not text or text == self._last_text:
                     continue
                 self._last_text = text
+                self.ui.set_partial_asr(text)
                 translated = self.translator.translate(text)
                 if self._frozen.is_set():
                     continue
-                with self._display_lock:
-                    if self._frozen.is_set():
-                        continue
-                    sys.stdout.write(f"\r\033[K{YELLOW}  ⟳  {translated}{RESET}")
-                    sys.stdout.flush()
+                self.ui.set_partial_translation(translated)
             except Exception as e:
-                print(f"\n[partial error] {e}", file=sys.stderr)
-
-
-# ──────────────────────────────────────────────
-# Display
-# ──────────────────────────────────────────────
-
-# ANSI colors
-CYAN = "\033[36m"
-YELLOW = "\033[33m"
-DIM = "\033[2m"
-RESET = "\033[0m"
-BOLD = "\033[1m"
-GREEN = "\033[32m"
-
-
-def print_header():
-    print(f"""
-{BOLD}╔══════════════════════════════════════════════╗
-║   🎤  Local Real-Time Translator              ║
-║   Silero VAD + Qwen3-ASR-1.7B + Qwen3.5-4B    ║
-╚══════════════════════════════════════════════╝{RESET}
-""")
+                self.ui.warn(f"partial error: {e}")
 
 
 # ──────────────────────────────────────────────
@@ -431,74 +670,77 @@ def print_header():
 # ──────────────────────────────────────────────
 
 def run(args):
-    print_header()
-
-    # Init components
-    stt = MlsASRClient(base_url=args.mls_url, language=args.asr_lang)
-    translator = OllamaTranslator(
-        model=args.ollama_model,
-        base_url=args.ollama_url,
+    ui = TranslatorUI(
         target_lang=args.target,
+        asr_lang=args.asr_lang,
+        asr_model="Qwen3-ASR-1.7B (mls)",
+        llm_model=args.ollama_model,
+        vad_threshold=args.vad_threshold,
+        end_silence_ms=SPEECH_END_MS,
+        partial_interval_s=PARTIAL_INTERVAL_S,
     )
-    mic = VADSegmenter(sample_rate=SAMPLE_RATE, threshold=args.vad_threshold)
+    ui.print_banner()
 
-    partial_pipe = PartialPipeline(stt, translator)
+    # Boot components with spinners above the (not-yet-started) Live region.
+    with ui.console.status("[cyan]Loading Silero VAD…", spinner="dots"):
+        mic = VADSegmenter(ui, sample_rate=SAMPLE_RATE, start_threshold=args.vad_threshold)
+    ui.ok("Silero VAD ready")
 
-    print(f"\n{DIM}Source: {args.asr_lang or 'auto'} → Target: {args.target}{RESET}")
-    print(f"{DIM}ASR: Qwen3-ASR-1.7B (mls) | LLM: {args.ollama_model}{RESET}")
-    print(f"{DIM}VAD: Silero (threshold={args.vad_threshold}) | end-silence={SPEECH_END_MS}ms | partial={PARTIAL_INTERVAL_S}s{RESET}\n")
-    print(f"{DIM}{'─' * 50}{RESET}\n")
+    with ui.console.status(f"[cyan]Connecting to mls at {args.mls_url}…", spinner="dots"):
+        stt = MlsASRClient(ui, base_url=args.mls_url, language=args.asr_lang)
+    ui.ok(f"mls connected  [dim]({args.mls_url})[/]")
 
-    seg_count = 0
-    header_printed = False
+    with ui.console.status(f"[cyan]Warming up Ollama '{args.ollama_model}'…", spinner="dots"):
+        translator = OllamaTranslator(
+            ui,
+            model=args.ollama_model,
+            base_url=args.ollama_url,
+            target_lang=args.target,
+        )
+    ui.ok(f"Ollama ready  [dim]({args.ollama_model})[/]")
+    ui.console.print()
 
-    def print_header_once():
-        nonlocal header_printed, seg_count
-        if not header_printed:
-            seg_count += 1
-            ts = time.strftime("%H:%M:%S")
-            print(f"{DIM}[{ts}] #{seg_count}{RESET}")
-            header_printed = True
+    partial_pipe = PartialPipeline(stt, translator, ui)
 
     try:
-        for kind, audio in mic.events():
-            if kind == "partial":
-                print_header_once()
-                partial_pipe.submit(audio)
-                continue
+        with ui:
+            for kind, audio in mic.events():
+                if kind == "partial":
+                    partial_pipe.submit(audio)
+                    continue
 
-            # kind == "final": quiesce the worker, then print the final block
-            partial_pipe.freeze()
-            print_header_once()
-            # Clear the in-place partial line before printing the final block
-            sys.stdout.write("\r\033[K")
-            sys.stdout.flush()
+                # kind == "final": quiesce the worker, then print the final card.
+                partial_pipe.freeze()
+                ui.set_state("transcribing")
+                ui.set_partial_translation("")
 
-            t0 = time.perf_counter()
-            text = stt.transcribe(audio)
-            stt_ms = (time.perf_counter() - t0) * 1000
+                t0 = time.perf_counter()
+                text = stt.transcribe(audio)
+                asr_ms = (time.perf_counter() - t0) * 1000
 
-            if not text or len(text.strip()) < 2:
+                if not text or len(text.strip()) < 2:
+                    partial_pipe.reset()
+                    ui.set_state("listening")
+                    continue
+
+                ui.set_partial_asr(text)
+                ui.set_state("translating")
+
+                t0 = time.perf_counter()
+                buffer = ""
+                for token in translator.translate_stream(text):
+                    buffer += token
+                    ui.set_partial_translation(buffer)
+                llm_ms = (time.perf_counter() - t0) * 1000
+
+                ui.log_utterance(text, buffer, asr_ms, llm_ms)
                 partial_pipe.reset()
-                header_printed = False
-                continue
-
-            print(f"{CYAN}  ASR ({stt_ms:.0f}ms): {text}{RESET}")
-
-            t0 = time.perf_counter()
-            sys.stdout.write(f"{YELLOW}  >>>  ")
-            sys.stdout.flush()
-            for token in translator.translate_stream(text):
-                sys.stdout.write(token)
-                sys.stdout.flush()
-            llm_ms = (time.perf_counter() - t0) * 1000
-            print(f"{RESET}")
-            print(f"{DIM}  ({llm_ms:.0f}ms){RESET}\n")
-
-            partial_pipe.reset()
-            header_printed = False
+                ui.set_state("listening")
+    except KeyboardInterrupt:
+        pass
     finally:
         partial_pipe.shutdown()
+        ui.print_summary()
 
 
 def main():
@@ -551,11 +793,7 @@ Examples:
     )
     args = parser.parse_args()
 
-    try:
-        run(args)
-    except KeyboardInterrupt:
-        print(f"\n\n{GREEN}Done. Bye!{RESET}")
-        sys.exit(0)
+    run(args)
 
 
 if __name__ == "__main__":

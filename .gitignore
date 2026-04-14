@@ -3,4 +3,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# macOS Swift app — source is closed; only the notarized Ora.dmg ships in releases
 macos/

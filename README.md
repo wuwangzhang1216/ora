@@ -1,152 +1,139 @@
-<div align="center">
+<p align="center">
+  <img src="docs/screenshots/app-icon.png" width="160" alt="Ora app icon"/>
+</p>
 
-# 🎤 Local Real-Time Translator
+<h1 align="center">Ora</h1>
 
-**Pure on-device real-time speech translation for Apple Silicon.**
-No cloud. No API keys. No telemetry.
+<p align="center">
+  <strong>Real-time local speech translation for macOS.</strong><br/>
+  Everything runs on your Mac — no cloud, no API keys, no data ever leaves the device.
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Apple%20Silicon-blue.svg)](#requirements)
-[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![MLX](https://img.shields.io/badge/MLX-Metal%20GPU-orange.svg)](https://github.com/ml-explore/mlx)
-[![Ollama](https://img.shields.io/badge/Ollama-qwen3.5%3A4b-black.svg)](https://ollama.com/)
-
-`Mic → Silero VAD → Qwen3-ASR-1.7B (MLX) → Qwen3.5-4B (Ollama) → Terminal`
-
-</div>
+<p align="center">
+  <a href="https://github.com/wuwangzhang1216/ora/releases/latest">
+    <img src="https://img.shields.io/github/v/release/wuwangzhang1216/ora?label=download&color=0a78be" alt="Latest release"/>
+  </a>
+  <img src="https://img.shields.io/badge/macOS-15%2B-0a78be" alt="macOS 15+"/>
+  <img src="https://img.shields.io/badge/Apple%20Silicon-required-0a78be" alt="Apple Silicon"/>
+  <img src="https://img.shields.io/badge/license-MIT-0a78be" alt="MIT"/>
+</p>
 
 ---
 
-## ✨ Preview
+## What is Ora?
 
-<div align="center">
+Ora listens to your microphone and streams live translations of what you say into a floating caption window, using on-device MLX models for both speech recognition and translation. It's designed as a small, focused menu-bar app — click once, talk, read.
 
-![Screenshot](screenshot.png)
+- 🎙 **Native real-time**: Silero VAD → Qwen3-ASR-1.7B → Qwen3.5-2B/4B LLM, all on Metal
+- 🔒 **100% local**: no network calls after the one-time model download, no API keys, no telemetry
+- ⚡️ **Low latency**: sub-second caption updates while you're still speaking, ~600 ms end-of-speech commit
+- 🪟 **Minimal UI**: menu bar icon + a single floating caption card, keyboard-shortcut driven
+- 🌍 **Multilingual**: translate between Chinese, English, Japanese, Korean, French, German, Spanish, and more
+- 🎚 **Tunable**: preferences for target language, quality tier, VAD sensitivity, end-of-speech window
 
-*Live partials stream in as you speak; finalized translations settle below.*
+## Screenshots
 
-</div>
+<p align="center">
+  <img src="docs/screenshots/caption-window.png" width="640" alt="Live caption window with Chinese source and English translation"/>
+  <br/>
+  <em>Floating caption card — source text above, large translation below, live status indicator + target-language chip.</em>
+</p>
 
-## 🚀 Highlights
+<p align="center">
+  <img src="docs/screenshots/preferences.png" width="420" alt="Preferences window"/>
+  <br/>
+  <em>Preferences — target language, quality tier, ASR source hint, VAD sensitivity + end-of-speech window, hotkey.</em>
+</p>
 
-- **100% local.** Audio never leaves your machine. No vendor lock-in, no API bills, works offline.
-- **Low latency.** ~800ms–1s from end-of-speech to first translated token. Rolling partials cut the *perceived* latency even lower.
-- **Metal-accelerated ASR.** Qwen3-ASR-1.7B runs 8-bit on the Apple GPU via MLX — beats Whisper-large-v3 on most benchmarks.
-- **Swap-friendly.** Point `--ollama-model` at any local LLM; `--asr-lang` / `--target` let you pivot source/target at the CLI.
-- **Rich TUI.** Live status panel, streaming tokens, colorized transcript history.
+## Download
 
-## 📦 Requirements
+Grab the signed and notarized `Ora.dmg` from the [latest release](https://github.com/wuwangzhang1216/ora/releases/latest), double-click to mount, drag **Ora.app** to **Applications**, launch.
 
-| | |
-|---|---|
-| **OS** | macOS 13+ on Apple Silicon (M1/M2/M3/M4) |
-| **Python** | 3.12 (installed automatically via `uv`) |
-| **Disk** | ~8 GB (Qwen3-ASR-1.7B-8bit + Qwen3.5-4B Q4) |
-| **RAM** | 16 GB unified memory recommended |
-| **Mic** | Any CoreAudio input device |
+- Requires **macOS 15 (Sequoia) or later** and an **Apple Silicon** Mac (M1/M2/M3/M4)
+- ~1.2 GB model download on first launch (the 2B translator + ASR + VAD)
+- First launch prompts for microphone access — required for speech capture
 
-## ⚡ Quick Start
+## Usage
+
+1. Click the echo-ring icon in the menu bar.
+2. Choose **Start Listening** (or press ⌘⇧T from anywhere).
+3. Speak. The floating caption window appears automatically.
+4. Hover the caption window to reveal ⏸ / ⧉ / ✕ controls (pause, copy translation, hide).
+5. Press ⌘, for Preferences — change target language, quality tier, VAD sensitivity.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| ⌘⇧T | Start / stop listening (global) |
+| ⌘⇧H | Show / hide caption window |
+| ⌘, | Preferences |
+| ⌘Q | Quit Ora |
+
+### Quality tiers
+
+| Tier | Model | Download | Latency | Best for |
+|------|-------|----------|---------|----------|
+| **Standard** (default) | Qwen3.5-2B-MLX-4bit | ~1.2 GB | ~400-700 ms/utterance | Casual conversation, news, video |
+| **High** | Qwen3.5-4B-MLX-4bit | ~3 GB | ~600-1100 ms/utterance | Nuanced content, technical terms |
+
+Switch at any time from the menu bar → **Quality**. The new model downloads automatically on first use.
+
+## Architecture
+
+```
+┌──────────┐    ┌───────────┐    ┌──────────────┐    ┌────────────────┐
+│  Mic     │───▶│ Silero VAD│───▶│  Qwen3-ASR   │───▶│ Qwen3.5 LLM    │
+│ 16 kHz   │    │ hysteresis│    │  1.7B MLX    │    │ 2B or 4B MLX   │
+│ Float32  │    │ frame VAD │    │  Metal GPU   │    │  Metal GPU     │
+└──────────┘    └───────────┘    └──────────────┘    └────────────────┘
+     │                │                  │                   │
+     │          ~30 ms/frame       ~300-500 ms         ~300-700 ms
+     │                │                  │                   │
+     └── AVAudioEngine ──────────────────────▶ SwiftUI Caption Card
+```
+
+- **VAD**: frame-level Silero with start/stop hysteresis (0.5 / 0.35) — industry-standard endpointing
+- **ASR**: batch Qwen3-ASR-1.7B re-invoked on a growing buffer every ~600 ms (sliding-window partial transcription)
+- **LLM**: `mlx-swift-lm` ChatSession streaming tokens straight to the SwiftUI caption card, thinking mode off
+- **UI**: SwiftUI `MenuBarExtra` + borderless `NSPanel` with `NSHostingController` auto-resize and persisted window origin
+
+All four stages run on the Metal GPU via [MLX Swift](https://github.com/ml-explore/mlx-swift) — no Python, no Ollama, no external server.
+
+> The Swift source for the Ora macOS app is closed source. Only the signed,
+> notarized `Ora.dmg` is published in [GitHub Releases](https://github.com/wuwangzhang1216/ora/releases). If you want to inspect or modify the pipeline, the Python reference implementation below reproduces the same architecture with open dependencies (Silero VAD + `mls` ASR server + Ollama).
+
+## Python CLI (open-source reference implementation)
+
+<p align="center">
+  <img src="docs/screenshots/cli.png" width="720" alt="Python CLI running in terminal with live VAD meter"/>
+  <br/>
+  <em>Live rich-terminal UI — status bar, per-utterance source + translation, scrolling history, and a real-time VAD probability meter.</em>
+</p>
+
+A Python implementation lives in [`main.py`](main.py) — the same architecture as the Ora macOS app, built on top of `mls` (an MLX model serving daemon) for ASR and Ollama for translation. It's useful for:
+
+- Running on macOS versions that don't meet the Ora app's 15.0 requirement
+- Reading / forking a fully open-source implementation of the same pipeline
+- Iterating on prompts or VAD settings without rebuilding anything
+- Watching a live VAD-level meter in a rich terminal UI
+
+The CLI uses the same industry-standard VAD config as the Ora app (hysteresis 0.5 / 0.35, end-of-speech 500 ms, partial cadence 600 ms).
 
 ```bash
-# 1. One-shot install — Homebrew, Ollama, mls, Python deps, model weights
+# One-shot install (creates .venv, pulls Ollama models, clones mls, preloads weights)
 ./setup.sh
 
-# 2. Run — launches mls + Ollama in the background if not already up
-./run.sh
-
-# 3. Pass any CLI flag straight through to main.py
-./run.sh --asr-lang ja --target English
+# Start Ollama + mls + run translator CLI
+./run.sh --target English --asr-lang zh
 ```
 
-> `run.sh` only stops the services it started itself, so it's safe to run alongside an Ollama or `mls` instance you're already using.
+See [setup.sh](setup.sh) and [run.sh](run.sh) for the full dependency chain.
 
-## 🎛️ Usage
+## Privacy
 
-```bash
-# Auto-detect source → Chinese (default)
-python main.py
+Ora doesn't phone home. The only network traffic is the initial HuggingFace model download, after which the app runs fully offline. No telemetry, no crash reporting, no analytics. Microphone audio never leaves your machine.
 
-# Japanese → English with explicit ASR hint
-python main.py --asr-lang ja --target English
+## License
 
-# Swap the translator LLM
-python main.py --ollama-model qwen3.5:9b
-
-# Stricter VAD for noisy rooms
-python main.py --vad-threshold 0.7
-```
-
-### CLI flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--target` | `Chinese` | Target language (free-form; passed to the LLM prompt) |
-| `--asr-lang` | *auto* | Source-language hint (`zh`, `en`, `ja`, …) |
-| `--ollama-model` | `qwen3.5:4b` | Any Ollama model tag installed locally |
-| `--ollama-url` | `http://localhost:11434` | Ollama API endpoint |
-| `--mls-url` | `http://127.0.0.1:18321` | `mls` ASR server endpoint |
-| `--vad-threshold` | `0.5` | Silero speech probability cutoff (0.3 lenient → 0.7 strict) |
-
-## 🧠 Why this stack
-
-| Component | Choice | Why |
-|---|---|---|
-| **VAD** | Silero VAD | Deep-learning VAD, ~4× fewer errors than WebRTC VAD at the same FPR; RTF 0.004 on CPU |
-| **ASR** | Qwen3-ASR-1.7B (8-bit MLX) via `mls` | Beats Whisper-large-v3 on most benchmarks (AISHELL-2: 2.71 vs 5.06 WER); runs on the Metal GPU |
-| **LLM** | Qwen3.5-4B via Ollama | Strong multilingual translation, ~3 GB VRAM, streams tokens |
-| **Transport** | HTTP to `mls` + Ollama | Two independent local servers, trivial to restart/debug |
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐   ┌───────────┐   ┌──────────────────┐   ┌───────────────┐
-│ Microphone  │──▶│ Silero VAD│──▶│  mls (Qwen3-ASR) │──▶│ Ollama (LLM)  │
-│ sounddevice │   │ endpoint  │   │  MLX, Metal GPU  │   │  qwen3.5:4b   │
-│ 16kHz mono  │   │ detection │   │  text out        │   │ stream tokens │
-└─────────────┘   └───────────┘   └──────────────────┘   └───────────────┘
-      │                │                   │                     │
-      │         ~10ms/frame         ~200–400ms/utt         ~300–600ms/utt
-      │                │                   │                     │
-      └── VAD-gated utterances ────────────────────────────▶ Terminal (rich)
-```
-
-**End-to-end latency:** ~800ms–1s after you stop speaking (VAD end-of-speech 300ms + ASR ~300ms + first LLM token ~200ms). Rolling partials appear *while* you're still speaking, so the perceived latency is lower still.
-
-### Live partials
-
-While you're speaking, a background worker re-runs ASR + a non-streaming translate on the growing audio buffer every ~0.8s (only if the buffer has grown by ≥0.3s) and redraws an in-place partial line. When you stop, the partial is cleared and the final streamed translation is printed. Stale partials are dropped whenever newer audio arrives, so you never see out-of-order output.
-
-## 🎚️ Tuning
-
-| Knob | Where | Effect |
-|---|---|---|
-| `SPEECH_END_MS` | [main.py](main.py) (default `300`) | Trailing-silence before an utterance is finalized. ↑ for slower/pausing speakers, ↓ for snappier end-of-turn |
-| `PARTIAL_INTERVAL_S` | [main.py](main.py) (default `0.8`) | How often in-flight partials are re-transcribed |
-| `PARTIAL_MIN_GROWTH_S` | [main.py](main.py) (default `0.3`) | Skip a partial if the buffer didn't grow by at least this much |
-| `--vad-threshold` | CLI (default `0.5`) | `0.3` = lenient (catches whispers), `0.7` = strict (better for noisy rooms) |
-| `--ollama-model` | CLI | Swap in a bigger model (`qwen3.5:9b`) for better nuance at higher latency |
-| `--asr-lang` | CLI | Skip auto-detect — improves accuracy on short utterances |
-
-## 🧩 Troubleshooting
-
-<details>
-<summary><b><code>mls</code> server won't start</b></summary>
-
-`mls` has an incomplete `requirements.txt`; [setup.sh](setup.sh) installs the missing `mlx-vlm` and `python-multipart` automatically. If you installed `mls` manually, add them yourself.
-</details>
-
-<details>
-<summary><b>Ollama model not found</b></summary>
-
-Run `ollama pull qwen3.5:4b` (or whatever `--ollama-model` you're using). [setup.sh](setup.sh) does this for you on first run.
-</details>
-
-<details>
-<summary><b>No microphone input / silent</b></summary>
-
-Grant the terminal app microphone permission in *System Settings → Privacy & Security → Microphone*. `sounddevice` surfaces CoreAudio errors to stderr — watch for `[audio]` lines.
-</details>
-
-## 📄 License
-
-[MIT](LICENSE)
+MIT.
