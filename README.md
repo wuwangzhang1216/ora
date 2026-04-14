@@ -68,11 +68,16 @@ python main.py --vad-threshold 0.7
       └── VAD-gated utterances ──────────────────────────▶ Terminal
 ```
 
-**End-to-end latency**: ~1.5–2s after you stop speaking (VAD end-of-speech 600ms + ASR ~300ms + first LLM token ~200ms).
+**End-to-end latency**: ~800ms–1s after you stop speaking (VAD end-of-speech 300ms + ASR ~300ms + first LLM token ~200ms). Rolling partials appear *while* you're still speaking, so the perceived latency is lower still.
+
+## Live partials
+
+While you're speaking, a background worker re-runs ASR + a non-streaming translate on the growing audio buffer every ~0.8s (only if the buffer has grown by ≥0.3s) and redraws a yellow `⟳` line in place. When you stop, the partial line is cleared and the final streamed translation is printed. Stale partials are dropped whenever newer audio arrives, so you never see out-of-order output.
 
 ## Tuning
 
-- **Latency vs false-cut**: lower `SPEECH_END_MS` in `main.py` (default 600) for snappier end-of-turn, higher for slower/pausing speakers
+- **Latency vs false-cut**: `SPEECH_END_MS` in `main.py` (default 300) — raise it for slower/pausing speakers, lower it for snappier end-of-turn
+- **Partial cadence**: `PARTIAL_INTERVAL_S` (default 0.8s) and `PARTIAL_MIN_GROWTH_S` (default 0.3s) control how often in-flight partials are re-transcribed
 - **VAD sensitivity**: `--vad-threshold` 0.3 = lenient, 0.7 = strict
 - **Translation quality**: `--ollama-model qwen3.5:9b` for better nuance at higher latency
 - **Source language hint**: `--asr-lang zh` skips auto-detect and can improve accuracy on short utterances
