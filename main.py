@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Pure-local real-time translator
-Silero VAD + Qwen3-ASR-1.7B (via mls) + Qwen3.5-4B (via Ollama)
+Silero VAD + on-device ASR (via mls) + on-device translator LLM (via Ollama)
 
 Architecture:
   Mic → sounddevice (16kHz PCM) → Silero VAD → utterance
-      → mls HTTP (Qwen3-ASR-1.7B-8bit, MLX) → text
-      → Ollama HTTP (qwen3.5:4b, streaming) → translated text → terminal
+      → mls HTTP (ASR, MLX) → text
+      → Ollama HTTP (translator LLM, streaming) → translated text → terminal
 
 No network calls. No API keys. Everything on-device (Metal GPU via MLX + Ollama).
 """
@@ -39,7 +39,13 @@ from rich.text import Text
 # Config
 # ──────────────────────────────────────────────
 
-DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
+QUALITY_MODELS = {
+    "standard":   "qwen3.5:2b",   # ~1.2 GB — default, fast
+    "high":       "qwen3.5:4b",   # ~3 GB — better quality, slower
+    "extra-high": "qwen3.5:9b",   # ~6 GB — best quality, slowest
+}
+DEFAULT_QUALITY = "standard"
+DEFAULT_OLLAMA_MODEL = QUALITY_MODELS[DEFAULT_QUALITY]
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_MLS_URL = "http://127.0.0.1:18321"
 SAMPLE_RATE = 16000
@@ -673,8 +679,8 @@ def run(args):
     ui = TranslatorUI(
         target_lang=args.target,
         asr_lang=args.asr_lang,
-        asr_model="Qwen3-ASR-1.7B (mls)",
-        llm_model=args.ollama_model,
+        asr_model="on-device (mls)",
+        llm_model=args.quality_label,
         vad_threshold=args.vad_threshold,
         end_silence_ms=SPEECH_END_MS,
         partial_interval_s=PARTIAL_INTERVAL_S,
@@ -690,14 +696,14 @@ def run(args):
         stt = MlsASRClient(ui, base_url=args.mls_url, language=args.asr_lang)
     ui.ok(f"mls connected  [dim]({args.mls_url})[/]")
 
-    with ui.console.status(f"[cyan]Warming up Ollama '{args.ollama_model}'…", spinner="dots"):
+    with ui.console.status(f"[cyan]Warming up translator ({args.quality_label})…", spinner="dots"):
         translator = OllamaTranslator(
             ui,
             model=args.ollama_model,
             base_url=args.ollama_url,
             target_lang=args.target,
         )
-    ui.ok(f"Ollama ready  [dim]({args.ollama_model})[/]")
+    ui.ok(f"Translator ready  [dim]({args.quality_label})[/]")
     ui.console.print()
 
     partial_pipe = PartialPipeline(stt, translator, ui)
@@ -745,18 +751,19 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pure-local real-time translator: Qwen3-ASR (mls) + Qwen3.5 (Ollama)",
+        description="Pure-local real-time translator: on-device ASR (mls) + on-device LLM (Ollama)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  # Auto-detect → Chinese (default)
+  # Auto-detect → Chinese (default, Standard quality)
   python main.py
 
   # Japanese source → English target
   python main.py --asr-lang ja --target English
 
-  # Swap the translator LLM
-  python main.py --ollama-model qwen3.5:9b
+  # Bump translation quality
+  python main.py --quality high
+  python main.py --quality extra-high
 
   # Stricter VAD (cuts sooner in noisy rooms)
   python main.py --vad-threshold 0.7
@@ -776,9 +783,15 @@ Examples:
         help=f"mls server URL (default: {DEFAULT_MLS_URL})",
     )
     parser.add_argument(
+        "--quality",
+        choices=list(QUALITY_MODELS.keys()),
+        default=DEFAULT_QUALITY,
+        help=f"Translator quality tier (default: {DEFAULT_QUALITY})",
+    )
+    parser.add_argument(
         "--ollama-model",
-        default=DEFAULT_OLLAMA_MODEL,
-        help=f"Ollama model (default: {DEFAULT_OLLAMA_MODEL})",
+        default=None,
+        help="Override the Ollama model id (bypasses --quality)",
     )
     parser.add_argument(
         "--ollama-url",
@@ -792,6 +805,12 @@ Examples:
         help="Silero VAD speech probability threshold 0..1 (default: 0.5)",
     )
     args = parser.parse_args()
+
+    if args.ollama_model:
+        args.quality_label = args.ollama_model
+    else:
+        args.ollama_model = QUALITY_MODELS[args.quality]
+        args.quality_label = args.quality.replace("-", " ").title()
 
     run(args)
 

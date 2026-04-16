@@ -64,7 +64,7 @@ fi
 if port_in_use "$MLS_PORT"; then
     echo -e "${GREEN}[ok]${RESET} mls already running on :$MLS_PORT"
 else
-    echo -e "${CYAN}[start] mls (Qwen3-ASR-1.7B-8bit)...${RESET}"
+    echo -e "${CYAN}[start] mls (on-device ASR)...${RESET}"
     if [ ! -f "$MLS_DIR/.venv/bin/python" ]; then
         echo "[run] $MLS_DIR/.venv missing — run ./setup.sh first" >&2
         exit 1

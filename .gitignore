@@ -6,3 +6,7 @@ __pycache__/
 
 # macOS Swift app — source is closed; only the notarized Ora.dmg ships in releases
 macos/
+
+# iOS — per-user Xcode state
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
