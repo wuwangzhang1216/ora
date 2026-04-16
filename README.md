@@ -24,9 +24,9 @@
 
 Ora listens to your microphone and streams live translations of what you say into a floating caption window, using on-device MLX models for both speech recognition and translation. It's designed as a small, focused menu-bar app — click once, talk, read.
 
-- 🎙 **Native real-time**: Silero VAD → Qwen3-ASR-1.7B → Qwen3.5-2B/4B LLM, all on Metal
+- 🎙 **Native real-time**: on-device voice activity detection, speech recognition, and translation, all on the Metal GPU
 - 🔒 **100% local**: no network calls after the one-time model download, no API keys, no telemetry
-- ⚡️ **Low latency**: sub-second caption updates while you're still speaking, ~600 ms end-of-speech commit
+- ⚡️ **Low latency**: sub-second caption updates while you're still speaking
 - 🪟 **Minimal UI**: menu bar icon + a single floating caption card, keyboard-shortcut driven
 - 🌍 **Multilingual**: translate between Chinese, English, Japanese, Korean, French, German, Spanish, and more
 - 🎚 **Tunable**: preferences for target language, quality tier, VAD sensitivity, end-of-speech window
@@ -50,7 +50,7 @@ Ora listens to your microphone and streams live translations of what you say int
 Grab the signed and notarized `Ora.dmg` from the [latest release](https://github.com/wuwangzhang1216/ora/releases/latest), double-click to mount, drag **Ora.app** to **Applications**, launch.
 
 - Requires **macOS 15 (Sequoia) or later** and an **Apple Silicon** Mac (M1/M2/M3/M4)
-- ~1.2 GB model download on first launch (the 2B translator + ASR + VAD)
+- ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
 ## Usage
@@ -72,36 +72,30 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 
 ### Quality tiers
 
-| Tier | Model | Download | Latency | Best for |
-|------|-------|----------|---------|----------|
-| **Standard** (default) | Qwen3.5-2B-MLX-4bit | ~1.2 GB | ~400-700 ms/utterance | Casual conversation, news, video |
-| **High** | Qwen3.5-4B-MLX-4bit | ~3 GB | ~600-1100 ms/utterance | Nuanced content, technical terms |
+| Tier | Download | Best for |
+|------|----------|----------|
+| **Standard** (default) | ~1.2 GB | Casual conversation, news, video |
+| **High** | ~3 GB | Nuanced content, technical terms |
+| **Extra High** | ~6 GB | Literary content, specialized terminology |
 
-Switch at any time from the menu bar → **Quality**. The new model downloads automatically on first use.
+Switch at any time from the menu bar → **Quality**. Higher tiers are more accurate but slower and use more memory; the weights download automatically on first use.
 
-## Architecture
+## How it works
 
 ```
 ┌──────────┐    ┌───────────┐    ┌──────────────┐    ┌────────────────┐
-│  Mic     │───▶│ Silero VAD│───▶│  Qwen3-ASR   │───▶│ Qwen3.5 LLM    │
-│ 16 kHz   │    │ hysteresis│    │  1.7B MLX    │    │ 2B or 4B MLX   │
-│ Float32  │    │ frame VAD │    │  Metal GPU   │    │  Metal GPU     │
+│  Mic     │───▶│   VAD     │───▶│     ASR      │───▶│  Translator    │
+│          │    │ endpoint  │    │ on-device    │    │   on-device    │
+│          │    │ detection │    │  Metal GPU   │    │   Metal GPU    │
 └──────────┘    └───────────┘    └──────────────┘    └────────────────┘
-     │                │                  │                   │
-     │          ~30 ms/frame       ~300-500 ms         ~300-700 ms
-     │                │                  │                   │
+     │                                                        │
      └── AVAudioEngine ──────────────────────▶ SwiftUI Caption Card
 ```
 
-- **VAD**: frame-level Silero with start/stop hysteresis (0.5 / 0.35) — industry-standard endpointing
-- **ASR**: batch Qwen3-ASR-1.7B re-invoked on a growing buffer every ~600 ms (sliding-window partial transcription)
-- **LLM**: `mlx-swift-lm` ChatSession streaming tokens straight to the SwiftUI caption card, thinking mode off
-- **UI**: SwiftUI `MenuBarExtra` + borderless `NSPanel` with `NSHostingController` auto-resize and persisted window origin
-
-All four stages run on the Metal GPU via [MLX Swift](https://github.com/ml-explore/mlx-swift) — no Python, no Ollama, no external server.
+Four stages run entirely on the Metal GPU via [MLX Swift](https://github.com/ml-explore/mlx-swift) — no Python, no Ollama, no external server. Partial results stream back to the caption card while you're still speaking; the final translation is committed once a short silence is detected.
 
 > The Swift source for the Ora macOS app is closed source. Only the signed,
-> notarized `Ora.dmg` is published in [GitHub Releases](https://github.com/wuwangzhang1216/ora/releases). If you want to inspect or modify the pipeline, the Python reference implementation below reproduces the same architecture with open dependencies (Silero VAD + `mls` ASR server + Ollama).
+> notarized `Ora.dmg` is published in [GitHub Releases](https://github.com/wuwangzhang1216/ora/releases). If you want to inspect or modify the pipeline, the Python reference implementation below reproduces the same architecture with open dependencies.
 
 ## Python CLI (open-source reference implementation)
 
@@ -118,14 +112,18 @@ A Python implementation lives in [`main.py`](main.py) — the same architecture 
 - Iterating on prompts or VAD settings without rebuilding anything
 - Watching a live VAD-level meter in a rich terminal UI
 
-The CLI uses the same industry-standard VAD config as the Ora app (hysteresis 0.5 / 0.35, end-of-speech 500 ms, partial cadence 600 ms).
+The CLI mirrors the Ora app's endpointing and partial-commit cadence, and exposes the same Standard / High / Extra High quality tiers via `--quality`.
 
 ```bash
-# One-shot install (creates .venv, pulls Ollama models, clones mls, preloads weights)
+# One-shot install (creates .venv, pulls translator models, clones the ASR server, preloads weights)
 ./setup.sh
 
-# Start Ollama + mls + run translator CLI
+# Start ASR + translator server + CLI
 ./run.sh --target English --asr-lang zh
+
+# Bump translation quality
+./run.sh --quality high
+./run.sh --quality extra-high
 ```
 
 See [setup.sh](setup.sh) and [run.sh](run.sh) for the full dependency chain.
