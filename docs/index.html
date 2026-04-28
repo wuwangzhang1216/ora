@@ -829,6 +829,147 @@
     }
 
     /* ───────────────────────────────────────────────
+       Control room — CLI UX upgrades
+    ──────────────────────────────────────────────── */
+    .control-room {
+      padding-top: clamp(40px, 8vh, 96px);
+    }
+    .control-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+    .terminal-panel,
+    .control-list {
+      background: rgba(13, 16, 28, 0.72);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 22px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+    }
+    .terminal-panel {
+      overflow: hidden;
+      min-height: 420px;
+    }
+    .terminal-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: var(--mute);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .terminal-dots {
+      display: inline-flex;
+      gap: 7px;
+    }
+    .terminal-dots i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--dim);
+    }
+    .terminal-dots i:nth-child(1) { background: #E67D7D; }
+    .terminal-dots i:nth-child(2) { background: #DDB86E; }
+    .terminal-dots i:nth-child(3) { background: #9FD4B8; }
+    .terminal-body {
+      padding: clamp(18px, 2.6vw, 30px);
+      font-family: var(--font-mono);
+      font-size: clamp(12px, 1.15vw, 14px);
+      line-height: 1.75;
+      color: var(--ink-soft);
+    }
+    .terminal-line {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      border-bottom: 1px dashed rgba(255,255,255,0.06);
+      padding: 7px 0;
+    }
+    .terminal-line:last-child { border-bottom: 0; }
+    .terminal-key {
+      flex: 0 0 128px;
+      color: var(--cyan);
+    }
+    .terminal-value strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .status-panel {
+      margin-top: 22px;
+      border: 1px solid rgba(111, 199, 227, 0.32);
+      border-radius: 16px;
+      padding: 14px 16px;
+      background: rgba(111, 199, 227, 0.06);
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--ink);
+    }
+    .status-meter {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 24px;
+      margin: 14px 0;
+    }
+    .status-meter i {
+      width: 4px;
+      height: 100%;
+      transform-origin: bottom;
+      transform: scaleY(0.35);
+      border-radius: 3px;
+      background: linear-gradient(180deg, var(--cyan), var(--sage));
+      animation: bar-bounce 1.2s ease-in-out infinite;
+    }
+    .status-meter i:nth-child(2n) { animation-delay: 0.15s; }
+    .status-meter i:nth-child(3n) { animation-delay: 0.3s; }
+    .status-output {
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .control-list {
+      padding: clamp(22px, 2.8vw, 34px);
+      display: grid;
+      align-content: center;
+      gap: 18px;
+    }
+    .control-item {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .control-item .num {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: var(--ink);
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.10);
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+    .control-item h3 {
+      font-size: 19px;
+      margin-bottom: 5px;
+    }
+    .control-item p {
+      color: var(--ink-soft);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    /* ───────────────────────────────────────────────
        How it works — animated workflow
     ──────────────────────────────────────────────── */
     .pipeline {
@@ -1039,6 +1180,7 @@
       .feature.local, .feature.instant,
       .feature.offline, .feature.private, .feature.accurate { grid-column: span 1; }
       .feature.free { grid-column: span 2; }
+      .control-grid { grid-template-columns: 1fr; }
       .pipeline { grid-template-columns: repeat(2, 1fr); gap: 20px; }
       .pipe-step:not(:last-child)::after { display: none; }
       .lang-cards { grid-template-columns: 1fr; max-width: 520px; margin-left: auto; margin-right: auto; }
@@ -1049,6 +1191,8 @@
       .pipeline { grid-template-columns: 1fr; }
       .hero-actions { flex-direction: column; }
       .hero-actions .btn { width: 100%; justify-content: center; }
+      .terminal-line { display: block; }
+      .terminal-key { display: block; margin-bottom: 2px; }
       nav .nav-link { display: none; }
     }
 
@@ -1086,6 +1230,7 @@
       </a>
       <div class="nav-actions">
         <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#cli">CLI</a>
         <a class="nav-link" href="#how">How it works</a>
         <a class="nav-link" href="https://github.com/wuwangzhang1216/ora">GitHub</a>
         <a class="btn btn-primary btn-sm" href="https://github.com/wuwangzhang1216/ora/releases/latest/download/Ora.dmg">Download</a>
@@ -1352,6 +1497,94 @@
             <div class="mini-vad">
               <i></i><i></i><i></i><i></i><i></i><i></i>
               <i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────── CLI CONTROL ROOM ─────── -->
+  <section id="cli" class="control-room">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Reference CLI</span>
+        <h2>Setup, tune, and save the session.</h2>
+        <p class="lede">The open reference runner now starts with a readiness check, room presets, microphone selection, and bilingual exports for meetings or demos.</p>
+      </div>
+
+      <div class="control-grid reveal">
+        <div class="terminal-panel" aria-label="Ora terminal user interface preview">
+          <div class="terminal-top">
+            <span class="terminal-dots"><i></i><i></i><i></i></span>
+            <span>ora --preset meeting --save-session</span>
+          </div>
+          <div class="terminal-body">
+            <div class="terminal-line">
+              <span class="terminal-key">preflight</span>
+              <span class="terminal-value"><strong>ready</strong> · mic, mls, Ollama, translator model</span>
+            </div>
+            <div class="terminal-line">
+              <span class="terminal-key">source</span>
+              <span class="terminal-value">auto → <strong>English</strong></span>
+            </div>
+            <div class="terminal-line">
+              <span class="terminal-key">preset</span>
+              <span class="terminal-value">meeting · threshold 0.50 · silence 500ms</span>
+            </div>
+            <div class="terminal-line">
+              <span class="terminal-key">session</span>
+              <span class="terminal-value">sessions/ora-session-20260428-1430.md</span>
+            </div>
+
+            <div class="status-panel">
+              <div class="status-row">
+                <span>● listening</span>
+                <span>3 utts</span>
+              </div>
+              <div class="status-meter" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="terminal-line">
+                <span class="terminal-key">src</span>
+                <span class="terminal-value">我们今天先把产品体验打磨得更顺一点。</span>
+              </div>
+              <div class="terminal-line">
+                <span class="terminal-key">▸</span>
+                <span class="status-output">Today, let's make the product experience smoother first.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="control-list">
+          <div class="control-item">
+            <span class="num">01</span>
+            <div>
+              <h3>Guided readiness.</h3>
+              <p>Clear local checks before listening begins: microphone, ASR server, Ollama, and model availability.</p>
+            </div>
+          </div>
+          <div class="control-item">
+            <span class="num">02</span>
+            <div>
+              <h3>Room presets.</h3>
+              <p>Quiet, meeting, and noisy profiles adjust endpointing without forcing users into raw VAD numbers.</p>
+            </div>
+          </div>
+          <div class="control-item">
+            <span class="num">03</span>
+            <div>
+              <h3>Session memory.</h3>
+              <p>Final captions can be saved as Markdown, TXT, JSONL, or SRT for review, notes, and subtitle workflows.</p>
+            </div>
+          </div>
+          <div class="control-item">
+            <span class="num">04</span>
+            <div>
+              <h3>Visual demo mode.</h3>
+              <p>The Rich UI can be run without local services, making it easy to test layout and flow before a real call.</p>
             </div>
           </div>
         </div>

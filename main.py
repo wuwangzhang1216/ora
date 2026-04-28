@@ -12,14 +12,18 @@ No network calls. No API keys. Everything on-device (Metal GPU via MLX + Ollama)
 """
 
 import argparse
+from dataclasses import dataclass
+from datetime import datetime
 import json
 import os
 import queue
+import shutil
 import sys
 import tempfile
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 import requests
@@ -75,6 +79,234 @@ Rules:
 - Translate even short fragments, hesitations ("uh", "嗯"), and incomplete sentences literally.
 - Never output an empty response; if truly nothing to translate, echo the input.\
 """
+
+VAD_PRESETS = {
+    "quiet": {
+        "vad_threshold": 0.42,
+        "end_silence_ms": 650,
+        "partial_interval_s": 0.55,
+        "description": "home office / headset mic",
+    },
+    "meeting": {
+        "vad_threshold": 0.5,
+        "end_silence_ms": 500,
+        "partial_interval_s": 0.6,
+        "description": "balanced default for calls and meetings",
+    },
+    "noisy": {
+        "vad_threshold": 0.68,
+        "end_silence_ms": 420,
+        "partial_interval_s": 0.7,
+        "description": "cafes, fans, shared rooms",
+    },
+}
+
+
+@dataclass
+class SegmentRecord:
+    index: int
+    timestamp: str
+    source: str
+    translation: str
+    asr_ms: float
+    llm_ms: float
+
+
+class SessionRecorder:
+    """Collect finalized translations and write a user-readable session file."""
+
+    def __init__(self, path: Path | None, fmt: str):
+        self.path = path
+        self.fmt = fmt
+        self.records: list[SegmentRecord] = []
+
+    @property
+    def enabled(self) -> bool:
+        return self.path is not None
+
+    def add(self, source: str, translation: str, asr_ms: float, llm_ms: float) -> None:
+        self.records.append(
+            SegmentRecord(
+                index=len(self.records) + 1,
+                timestamp=datetime.now().isoformat(timespec="seconds"),
+                source=source,
+                translation=translation,
+                asr_ms=asr_ms,
+                llm_ms=llm_ms,
+            )
+        )
+
+    def write(self) -> Path | None:
+        if not self.enabled or self.path is None:
+            return None
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.fmt == "jsonl":
+            body = "\n".join(json.dumps(r.__dict__, ensure_ascii=False) for r in self.records)
+        elif self.fmt == "txt":
+            body = self._txt()
+        elif self.fmt == "srt":
+            body = self._srt()
+        else:
+            body = self._md()
+        if body and not body.endswith("\n"):
+            body += "\n"
+        self.path.write_text(body, encoding="utf-8")
+        return self.path
+
+    def _txt(self) -> str:
+        lines = []
+        for r in self.records:
+            lines.extend(
+                [
+                    f"[{r.index}] {r.timestamp}",
+                    f"SOURCE: {r.source}",
+                    f"TRANSLATION: {r.translation}",
+                    "",
+                ]
+            )
+        return "\n".join(lines)
+
+    def _md(self) -> str:
+        lines = ["# Ora Session", "", f"Created: {datetime.now().isoformat(timespec='seconds')}", ""]
+        for r in self.records:
+            lines.extend(
+                [
+                    f"## {r.index}. {r.timestamp}",
+                    "",
+                    f"**Source**: {r.source}",
+                    "",
+                    f"**Translation**: {r.translation}",
+                    "",
+                    f"`ASR {r.asr_ms:.0f}ms`  `LLM {r.llm_ms:.0f}ms`",
+                    "",
+                ]
+            )
+        return "\n".join(lines)
+
+    def _srt(self) -> str:
+        lines = []
+        for i, r in enumerate(self.records, start=1):
+            start_s = max(0, (i - 1) * 4)
+            end_s = start_s + 4
+            lines.extend(
+                [
+                    str(i),
+                    f"{_srt_time(start_s)} --> {_srt_time(end_s)}",
+                    r.translation,
+                    r.source,
+                    "",
+                ]
+            )
+        return "\n".join(lines)
+
+
+def _srt_time(seconds: int) -> str:
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d},000"
+
+
+def default_session_path(fmt: str) -> Path:
+    ext = "md" if fmt == "markdown" else fmt
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Path("sessions") / f"ora-session-{stamp}.{ext}"
+
+
+def resolve_device_id(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        devices = sd.query_devices()
+        matches = [
+            idx
+            for idx, dev in enumerate(devices)
+            if dev.get("max_input_channels", 0) > 0
+            and value.lower() in str(dev.get("name", "")).lower()
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            raise ValueError(f"No input device matches '{value}'")
+        raise ValueError(f"Multiple input devices match '{value}': {matches}")
+
+
+def input_devices_table() -> Table:
+    table = Table(title="Input Devices", show_header=True, header_style="bold cyan")
+    table.add_column("id", justify="right", style="dim")
+    table.add_column("name")
+    table.add_column("channels", justify="right")
+    table.add_column("default rate", justify="right")
+    try:
+        default_input = sd.default.device[0]
+        for idx, dev in enumerate(sd.query_devices()):
+            channels = int(dev.get("max_input_channels", 0))
+            if channels <= 0:
+                continue
+            name = str(dev.get("name", "Unknown"))
+            if idx == default_input:
+                name = f"{name} [green](default)[/]"
+            table.add_row(
+                str(idx),
+                name,
+                str(channels),
+                f"{float(dev.get('default_samplerate', 0.0)):.0f} Hz",
+            )
+    except Exception as e:
+        table.add_row("-", f"[red]{e}[/]", "-", "-")
+    return table
+
+
+def run_preflight(args, ui: "TranslatorUI") -> bool:
+    """Friendly readiness screen before the real-time path opens the mic."""
+    rows: list[tuple[str, bool, str]] = []
+
+    rows.append(("Python deps", True, "loaded"))
+    ollama_path = shutil.which("ollama")
+    rows.append(("Ollama binary", ollama_path is not None, ollama_path or "install with: brew install ollama"))
+
+    try:
+        device_id = resolve_device_id(args.device)
+        devices = sd.query_devices()
+        device_name = devices[device_id]["name"] if device_id is not None else "system default"
+        rows.append(("Microphone", True, str(device_name)))
+    except Exception as e:
+        rows.append(("Microphone", False, str(e)))
+
+    try:
+        requests.get(args.mls_url, timeout=2)
+        rows.append(("mls ASR server", True, args.mls_url))
+    except requests.ConnectionError:
+        rows.append(("mls ASR server", False, "start with ./run.sh or run setup first"))
+    except Exception as e:
+        rows.append(("mls ASR server", False, str(e)))
+
+    try:
+        r = requests.get(f"{args.ollama_url.rstrip('/')}/api/tags", timeout=2)
+        r.raise_for_status()
+        models = [m["name"] for m in r.json().get("models", [])]
+        matched = any(args.ollama_model in m or args.ollama_model.split(":")[0] in m for m in models)
+        rows.append(("Translator model", matched, args.ollama_model if matched else f"pull with: ollama pull {args.ollama_model}"))
+    except requests.ConnectionError:
+        rows.append(("Ollama server", False, "start with: ollama serve"))
+    except Exception as e:
+        rows.append(("Ollama server", False, str(e)))
+
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("status", width=2)
+    table.add_column("check")
+    table.add_column("detail", style="dim")
+    for label, ok, detail in rows:
+        table.add_row("[green]✓[/]" if ok else "[red]✗[/]", label, detail)
+
+    ok_all = all(ok for _, ok, _ in rows)
+    border = "green" if ok_all else "yellow"
+    title = "[bold green]Ready[/]" if ok_all else "[bold yellow]Needs attention[/]"
+    ui.console.print(Panel(table, title=title, border_style=border))
+    if not ok_all:
+        ui.console.print("[dim]Tip: ./run.sh starts the local services it can manage; ./setup.sh installs missing pieces.[/]\n")
+    return ok_all
 
 
 # ──────────────────────────────────────────────
@@ -331,6 +563,9 @@ class VADSegmenter:
         sample_rate: int = SAMPLE_RATE,
         start_threshold: float = VAD_THRESHOLD,
         stop_threshold: float | None = None,
+        end_silence_ms: int = SPEECH_END_MS,
+        partial_interval_s: float = PARTIAL_INTERVAL_S,
+        input_device: int | None = None,
     ):
         self.ui = ui
         self.sample_rate = sample_rate
@@ -340,6 +575,9 @@ class VADSegmenter:
             if stop_threshold is not None
             else max(0.0, start_threshold - VAD_HYSTERESIS)
         )
+        self.end_silence_ms = end_silence_ms
+        self.partial_interval_s = partial_interval_s
+        self.input_device = input_device
         self.model = load_silero_vad()
         self.q: queue.Queue[np.ndarray] = queue.Queue()
 
@@ -365,7 +603,7 @@ class VADSegmenter:
     def events(self):
         """Yield ('partial', audio) during speech and ('final', audio) at end-of-speech."""
         pre_roll_frames = max(1, PRE_ROLL_MS // VAD_FRAME_MS)
-        end_silence_frames = max(1, SPEECH_END_MS // VAD_FRAME_MS)
+        end_silence_frames = max(1, self.end_silence_ms // VAD_FRAME_MS)
         min_frames = max(1, MIN_UTTERANCE_MS // VAD_FRAME_MS)
         max_frames = int(MAX_UTTERANCE_S * 1000 / VAD_FRAME_MS)
         partial_growth_frames = max(1, int(PARTIAL_MIN_GROWTH_S * 1000 / VAD_FRAME_MS))
@@ -383,6 +621,7 @@ class VADSegmenter:
             channels=1,
             dtype="float32",
             blocksize=VAD_FRAME_SAMPLES,
+            device=self.input_device,
             callback=self._callback,
         ):
             self.ui.set_state("listening")
@@ -420,7 +659,7 @@ class VADSegmenter:
                     # Emit a rolling partial if enough time has passed AND buffer grew.
                     now = time.monotonic()
                     grew_enough = (len(voiced) - last_partial_frames) >= partial_growth_frames
-                    time_elapsed = (now - last_partial_ts) >= PARTIAL_INTERVAL_S
+                    time_elapsed = (now - last_partial_ts) >= self.partial_interval_s
                     if time_elapsed and grew_enough and len(voiced) >= min_frames:
                         yield ("partial", np.concatenate(voiced))
                         last_partial_ts = now
@@ -682,14 +921,32 @@ def run(args):
         asr_model="on-device (mls)",
         llm_model=args.quality_label,
         vad_threshold=args.vad_threshold,
-        end_silence_ms=SPEECH_END_MS,
-        partial_interval_s=PARTIAL_INTERVAL_S,
+        end_silence_ms=args.end_silence_ms,
+        partial_interval_s=args.partial_interval_s,
     )
     ui.print_banner()
 
+    if not args.skip_preflight and not run_preflight(args, ui):
+        sys.exit(2)
+
+    try:
+        input_device = resolve_device_id(args.device)
+    except ValueError as e:
+        ui.err(str(e))
+        sys.exit(2)
+
+    recorder = SessionRecorder(args.session_file, args.output_format)
+
     # Boot components with spinners above the (not-yet-started) Live region.
     with ui.console.status("[cyan]Loading Silero VAD…", spinner="dots"):
-        mic = VADSegmenter(ui, sample_rate=SAMPLE_RATE, start_threshold=args.vad_threshold)
+        mic = VADSegmenter(
+            ui,
+            sample_rate=SAMPLE_RATE,
+            start_threshold=args.vad_threshold,
+            end_silence_ms=args.end_silence_ms,
+            partial_interval_s=args.partial_interval_s,
+            input_device=input_device,
+        )
     ui.ok("Silero VAD ready")
 
     with ui.console.status(f"[cyan]Connecting to mls at {args.mls_url}…", spinner="dots"):
@@ -740,13 +997,78 @@ def run(args):
                 llm_ms = (time.perf_counter() - t0) * 1000
 
                 ui.log_utterance(text, buffer, asr_ms, llm_ms)
+                recorder.add(text, buffer, asr_ms, llm_ms)
                 partial_pipe.reset()
                 ui.set_state("listening")
     except KeyboardInterrupt:
         pass
     finally:
         partial_pipe.shutdown()
+        written = recorder.write()
         ui.print_summary()
+        if written:
+            ui.ok(f"Session saved to {written}")
+
+
+def run_demo(args):
+    ui = TranslatorUI(
+        target_lang=args.target,
+        asr_lang=args.asr_lang,
+        asr_model="demo ASR",
+        llm_model=f"{args.quality_label} demo",
+        vad_threshold=args.vad_threshold,
+        end_silence_ms=args.end_silence_ms,
+        partial_interval_s=args.partial_interval_s,
+    )
+    ui.print_banner()
+    recorder = SessionRecorder(args.session_file, args.output_format)
+    samples = [
+        (
+            "我们今天先把产品体验打磨得更顺一点。",
+            "Today, let's first make the product experience feel smoother.",
+        ),
+        (
+            "Can you keep the subtitles compact during a meeting?",
+            "你可以在会议期间让字幕保持紧凑吗？",
+        ),
+        (
+            "専門用語は用語集に入れて、翻訳を安定させたいです。",
+            "I want to add technical terms to the glossary so translation stays consistent.",
+        ),
+    ]
+
+    with ui:
+        for source, translation in samples:
+            ui.set_state("speaking")
+            ui.clear_partial()
+            for p in (0.18, 0.33, 0.62, 0.78, 0.54, 0.72, 0.41):
+                ui.push_vad_level(p)
+                time.sleep(args.demo_speed)
+            pieces = source.split()
+            if len(pieces) <= 1:
+                pieces = [source[: i + 6] for i in range(0, len(source), 6)]
+            for i in range(1, len(pieces) + 1):
+                ui.set_partial_asr(" ".join(pieces[:i]) if " " in source else pieces[i - 1])
+                time.sleep(args.demo_speed)
+            ui.set_state("transcribing")
+            time.sleep(args.demo_speed * 2)
+            ui.set_state("translating")
+            buffer = ""
+            for token in translation.split(" "):
+                buffer = f"{buffer} {token}".strip()
+                ui.set_partial_translation(buffer)
+                time.sleep(args.demo_speed)
+            asr_ms = 180 + len(source) * 2
+            llm_ms = 260 + len(translation) * 3
+            ui.log_utterance(source, translation, asr_ms, llm_ms)
+            recorder.add(source, translation, asr_ms, llm_ms)
+            ui.clear_partial()
+            ui.set_state("listening")
+            time.sleep(args.demo_speed * 3)
+    written = recorder.write()
+    ui.print_summary()
+    if written:
+        ui.ok(f"Session saved to {written}")
 
 
 def main():
@@ -765,8 +1087,12 @@ Examples:
   python main.py --quality high
   python main.py --quality extra-high
 
-  # Stricter VAD (cuts sooner in noisy rooms)
-  python main.py --vad-threshold 0.7
+  # Run a visual demo without mic / mls / Ollama
+  python main.py --demo --save-session --output-format markdown
+
+  # Tune for a noisy room and choose a microphone
+  python main.py --preset noisy --list-devices
+  python main.py --preset noisy --device "MacBook Pro Microphone"
 """,
     )
     parser.add_argument(
@@ -804,6 +1130,68 @@ Examples:
         default=VAD_THRESHOLD,
         help="Silero VAD speech probability threshold 0..1 (default: 0.5)",
     )
+    parser.add_argument(
+        "--end-silence-ms",
+        type=int,
+        default=None,
+        help="Silence window that ends an utterance; defaults to the selected preset",
+    )
+    parser.add_argument(
+        "--partial-interval",
+        dest="partial_interval_s",
+        type=float,
+        default=None,
+        help="Seconds between rolling partial captions; defaults to the selected preset",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=list(VAD_PRESETS.keys()),
+        default="meeting",
+        help="VAD tuning preset: quiet, meeting, or noisy (default: meeting)",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Input device id or name substring; use --list-devices to inspect",
+    )
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="Show microphone input devices and exit",
+    )
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip startup readiness checks",
+    )
+    parser.add_argument(
+        "--save-session",
+        action="store_true",
+        help="Save finalized source/translation pairs after the run",
+    )
+    parser.add_argument(
+        "--session-file",
+        type=Path,
+        default=None,
+        help="Where to write the session transcript",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["markdown", "txt", "jsonl", "srt"],
+        default="markdown",
+        help="Session transcript format (default: markdown)",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run a visual terminal demo without opening the mic or local services",
+    )
+    parser.add_argument(
+        "--demo-speed",
+        type=float,
+        default=0.08,
+        help="Delay between demo UI frames in seconds (default: 0.08)",
+    )
     args = parser.parse_args()
 
     if args.ollama_model:
@@ -812,7 +1200,24 @@ Examples:
         args.ollama_model = QUALITY_MODELS[args.quality]
         args.quality_label = args.quality.replace("-", " ").title()
 
-    run(args)
+    preset = VAD_PRESETS[args.preset]
+    if args.vad_threshold == VAD_THRESHOLD:
+        args.vad_threshold = preset["vad_threshold"]
+    if args.end_silence_ms is None:
+        args.end_silence_ms = preset["end_silence_ms"]
+    if args.partial_interval_s is None:
+        args.partial_interval_s = preset["partial_interval_s"]
+    if args.session_file is None and args.save_session:
+        args.session_file = default_session_path(args.output_format)
+
+    if args.list_devices:
+        Console(highlight=False).print(input_devices_table())
+        return
+
+    if args.demo:
+        run_demo(args)
+    else:
+        run(args)
 
 
 if __name__ == "__main__":

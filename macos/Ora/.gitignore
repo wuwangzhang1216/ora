@@ -1,0 +1,13 @@
+## Build / packaging outputs — never committed
+.xcode-build/
+.app/
+.dist/
+.build/
+.swiftpm/
+Package.resolved
+
+## Local-only docs (personal secrets, credential flow)
+PACKAGING.md
+
+## macOS junk
+.DS_Store

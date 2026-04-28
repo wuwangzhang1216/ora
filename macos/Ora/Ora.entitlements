@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Microphone — required for AVAudioEngine input. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Outbound network — HuggingFace model downloads. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!--
+    Hardened runtime exceptions required by MLX Swift + mlx-swift-lm:
+    MLX compiles Metal kernels at runtime from bundled shader source, which
+    Apple's hardened runtime flags as "suspicious" without these.
+    -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

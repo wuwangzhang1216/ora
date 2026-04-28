@@ -4,8 +4,11 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# macOS Swift app — source is closed; only the notarized Ora.dmg ships in releases
-macos/
+# macOS Swift app — keep source visible, ignore generated artifacts
+macos/Ora/.build/
+macos/Ora/.xcode-build/
+macos/Ora/.app/
+macos/Ora/.dist/
 
-# iOS app — source is also closed; ships via TestFlight / App Store
+# iOS app is not part of this macOS pass
 ios/

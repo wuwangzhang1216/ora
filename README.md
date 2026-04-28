@@ -53,13 +53,20 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 - ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
+### What's new in 0.5.0
+
+- Native macOS caption layouts: Bilingual, Translation Only, and Compact
+- Room-aware VAD presets: Quiet Room, Meeting, Noisy Room, and Custom
+- Faster daily workflow controls: copy current / last translation and export transcript history
+- CLI setup upgrades: preflight checks, microphone selection, demo mode, room presets, and Markdown / TXT / JSONL / SRT session export
+
 ## Usage
 
 1. Click the echo-ring icon in the menu bar.
 2. Choose **Start Listening** (or press ⌘⇧T from anywhere).
 3. Speak. The floating caption window appears automatically.
 4. Hover the caption window to reveal ⏸ / ⧉ / ✕ controls (pause, copy translation, hide).
-5. Press ⌘, for Preferences — change target language, quality tier, VAD sensitivity.
+5. Press ⌘, for Preferences — change target language, quality tier, caption layout, VAD room preset, and caption size.
 
 ### Keyboard shortcuts
 
@@ -69,6 +76,15 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 | ⌘⇧H | Show / hide caption window |
 | ⌘, | Preferences |
 | ⌘Q | Quit Ora |
+
+### macOS UX controls
+
+The native macOS app includes the same daily-use tuning as the reference CLI:
+
+- **Caption layout**: Bilingual, Translation Only, or Compact for screen sharing
+- **Room presets**: Quiet Room, Meeting, Noisy Room, or Custom VAD settings
+- **Fast copy**: copy the current or last translation from the menu bar, or from the caption card hover controls
+- **Transcript history**: export the current session or all history as TXT, SRT, JSON, or Markdown
 
 ### Quality tiers
 
@@ -94,8 +110,9 @@ Switch at any time from the menu bar → **Quality**. Higher tiers are more accu
 
 Four stages run entirely on the Metal GPU via [MLX Swift](https://github.com/ml-explore/mlx-swift) — no Python, no Ollama, no external server. Partial results stream back to the caption card while you're still speaking; the final translation is committed once a short silence is detected.
 
-> The Swift source for the Ora macOS app is closed source. Only the signed,
-> notarized `Ora.dmg` is published in [GitHub Releases](https://github.com/wuwangzhang1216/ora/releases). If you want to inspect or modify the pipeline, the Python reference implementation below reproduces the same architecture with open dependencies.
+> The native Swift source for the Ora macOS app lives in [`macos/Ora`](macos/Ora).
+> The Python reference implementation below mirrors the same architecture with
+> open dependencies for fast experimentation and terminal-first testing.
 
 ## Python CLI (open-source reference implementation)
 
@@ -125,6 +142,32 @@ The CLI mirrors the Ora app's endpointing and partial-commit cadence, and expose
 ./run.sh --quality high
 ./run.sh --quality extra-high
 ```
+
+### CLI UX tools
+
+The reference CLI includes a few daily-use affordances that make it easier to set up, tune, and review a session:
+
+```bash
+# Run the terminal UI without mic / mls / Ollama, useful for a quick visual check
+python main.py --demo --save-session
+
+# Inspect microphones, then pick one by id or name
+python main.py --list-devices
+./run.sh --device "MacBook Pro Microphone"
+
+# Tune endpointing for the room
+./run.sh --preset quiet
+./run.sh --preset meeting
+./run.sh --preset noisy
+
+# Save finalized bilingual captions
+./run.sh --save-session --output-format markdown
+./run.sh --save-session --output-format txt
+./run.sh --save-session --output-format jsonl
+./run.sh --save-session --output-format srt
+```
+
+On normal runs, Ora now performs a preflight readiness check before opening the mic: microphone availability, `mls`, Ollama, and the selected translator model. Use `--skip-preflight` only when you intentionally want the old direct-start behavior.
 
 See [setup.sh](setup.sh) and [run.sh](run.sh) for the full dependency chain.
 
