@@ -107,6 +107,14 @@ hdiutil create \
     >/dev/null
 
 rm -rf "$STAGING"
+
+if [ "$SIGN_MODE" = "developer-id" ]; then
+    echo "[pkg] signing DMG with $DEVELOPER_ID..."
+    codesign --force --sign "$DEVELOPER_ID" \
+        --timestamp \
+        "$DMG_PATH"
+fi
+
 echo "[pkg] DMG: $DMG_PATH ($(du -h "$DMG_PATH" | cut -f1))"
 
 # ── Notarize (if profile present) ──────────────────────────────────────
