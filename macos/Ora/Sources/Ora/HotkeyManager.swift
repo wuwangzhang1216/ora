@@ -15,18 +15,17 @@ final class HotkeyManager {
 
     private init() {}
 
-    /// Register ⌘⇧T as the toggle-listening hotkey.
-    func installDefault(handler: @escaping () -> Void) {
-        install(
-            keyCode: UInt32(kVK_ANSI_T),
-            modifiers: UInt32(cmdKey | shiftKey),
-            handler: handler
-        )
+    func install(shortcut: GlobalHotkey, handler: @escaping () -> Void) {
+        self.handler = handler
+        register(shortcut: shortcut)
     }
 
-    func install(keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
-        uninstall()
-        self.handler = handler
+    func updateShortcut(_ shortcut: GlobalHotkey) {
+        register(shortcut: shortcut)
+    }
+
+    private func register(shortcut: GlobalHotkey) {
+        unregisterHotKey()
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -61,8 +60,8 @@ final class HotkeyManager {
         let hotKeyID = EventHotKeyID(signature: OSType(0x54525458), id: 1)  // 'TRTX'
         var ref: EventHotKeyRef?
         let regStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
+            shortcut.carbonKeyCode,
+            shortcut.carbonModifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -71,16 +70,16 @@ final class HotkeyManager {
         if regStatus == noErr {
             hotKeyRef = ref
             FileHandle.standardError.write(
-                "[hotkey] registered ⌘⇧T\n".data(using: .utf8) ?? Data()
+                "[hotkey] registered \(shortcut.glyphs)\n".data(using: .utf8) ?? Data()
             )
         } else {
             FileHandle.standardError.write(
-                "[hotkey] RegisterEventHotKey failed: \(regStatus)\n".data(using: .utf8) ?? Data()
+                "[hotkey] RegisterEventHotKey failed for \(shortcut.glyphs): \(regStatus)\n".data(using: .utf8) ?? Data()
             )
         }
     }
 
-    func uninstall() {
+    private func unregisterHotKey() {
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
@@ -89,6 +88,10 @@ final class HotkeyManager {
             RemoveEventHandler(eh)
             eventHandler = nil
         }
+    }
+
+    func uninstall() {
+        unregisterHotKey()
         handler = nil
     }
 }

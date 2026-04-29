@@ -73,6 +73,21 @@ struct PreferencesView: View {
                 }
             }
 
+            Section("Hotkey") {
+                Picker("Start / Stop Listening", selection: $prefs.startStopHotkey) {
+                    ForEach(GlobalHotkey.allCases, id: \.self) { hotkey in
+                        Text(hotkey.glyphs).tag(hotkey)
+                    }
+                }
+                .onChange(of: prefs.startStopHotkey) { _, newValue in
+                    HotkeyManager.shared.updateShortcut(newValue)
+                }
+
+                Text(prefs.startStopHotkey.helpText)
+                    .font(.caption)
+                    .foregroundStyle(prefs.startStopHotkey == .legacyCommandShiftT ? .orange : .secondary)
+            }
+
             Section("Caption Appearance") {
                 Picker("Layout", selection: $prefs.captionDisplayMode) {
                     ForEach(CaptionDisplayMode.allCases, id: \.self) { mode in
@@ -151,16 +166,6 @@ struct PreferencesView: View {
                 Text("How long to wait after speech stops before finalising")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Hotkey") {
-                HStack {
-                    Text("Start / Stop Listening")
-                    Spacer()
-                    Text("⌘⇧T")
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
             }
 
             Section("Transcript History") {

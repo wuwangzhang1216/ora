@@ -90,9 +90,9 @@ struct OraApp: App {
             Task { await e.prepare() }
         }
 
-        // Register the global ⌘⇧T hotkey. Carbon's RegisterEventHotKey does
-        // not need Accessibility permission.
-        HotkeyManager.shared.installDefault { [weak e] in
+        // Register the global start/stop hotkey. Carbon's RegisterEventHotKey
+        // does not need Accessibility permission.
+        HotkeyManager.shared.install(shortcut: Preferences.shared.startStopHotkey) { [weak e] in
             guard let e else { return }
             Task { @MainActor in
                 PanelManager.shared.show(engine: e)
@@ -192,7 +192,7 @@ struct MenuContent: View {
             PanelManager.shared.show(engine: engine)
             engine.toggle()
         }
-        .keyboardShortcut("t", modifiers: [.command, .shift])
+        .keyboardShortcut(prefs.startStopHotkey.keyEquivalent, modifiers: prefs.startStopHotkey.eventModifiers)
 
         Divider()
 

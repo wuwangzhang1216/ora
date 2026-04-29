@@ -27,9 +27,9 @@ Ora listens to your microphone and streams live translations of what you say int
 - 🎙 **Native real-time**: on-device voice activity detection, speech recognition, and translation, all on the Metal GPU
 - 🔒 **100% local**: no network calls after the one-time model download, no API keys, no telemetry
 - ⚡️ **Low latency**: sub-second caption updates while you're still speaking
-- 🪟 **Minimal UI**: menu bar icon + a single floating caption card, keyboard-shortcut driven
+- 🪟 **Minimal UI**: menu bar icon + a single floating caption card, configurable-shortcut driven
 - 🌍 **Multilingual**: translate between Chinese, English, Japanese, Korean, French, German, Spanish, and more
-- 🎚 **Tunable**: preferences for target language, quality tier, VAD sensitivity, end-of-speech window
+- 🎚 **Tunable**: preferences for target language, quality tier, global hotkey, VAD sensitivity, end-of-speech window
 
 ## Screenshots
 
@@ -53,6 +53,12 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 - ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
+### What's new in 0.5.1
+
+- Configurable macOS Start / Stop Listening hotkey in Preferences
+- New default global shortcut: ⌥Space, avoiding Chrome / Brave's reopen-closed-tab shortcut
+- Legacy ⌘⇧T remains available as an opt-in shortcut
+
 ### What's new in 0.5.0
 
 - Native macOS caption layouts: Bilingual, Translation Only, and Compact
@@ -63,16 +69,16 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 ## Usage
 
 1. Click the echo-ring icon in the menu bar.
-2. Choose **Start Listening** (or press ⌘⇧T from anywhere).
+2. Choose **Start Listening** (or press ⌥Space from anywhere).
 3. Speak. The floating caption window appears automatically.
 4. Hover the caption window to reveal ⏸ / ⧉ / ✕ controls (pause, copy translation, hide).
-5. Press ⌘, for Preferences — change target language, quality tier, caption layout, VAD room preset, and caption size.
+5. Press ⌘, for Preferences — change target language, quality tier, global hotkey, caption layout, VAD room preset, and caption size.
 
 ### Keyboard shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘⇧T | Start / stop listening (global) |
+| ⌥Space | Start / stop listening (global, configurable in Preferences) |
 | ⌘⇧H | Show / hide caption window |
 | ⌘, | Preferences |
 | ⌘Q | Quit Ora |
@@ -82,6 +88,7 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 The native macOS app includes the same daily-use tuning as the reference CLI:
 
 - **Caption layout**: Bilingual, Translation Only, or Compact for screen sharing
+- **Configurable hotkey**: change Start / Stop Listening from the default ⌥Space, including a legacy ⌘⇧T option
 - **Room presets**: Quiet Room, Meeting, Noisy Room, or Custom VAD settings
 - **Fast copy**: copy the current or last translation from the menu bar, or from the caption card hover controls
 - **Transcript history**: export the current session or all history as TXT, SRT, JSON, or Markdown

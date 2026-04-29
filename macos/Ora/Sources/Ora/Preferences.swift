@@ -24,6 +24,7 @@ final class Preferences {
         static let captionSourceFontSize = "captionSourceFontSize"
         static let captionDisplayMode = "captionDisplayMode"
         static let vadPreset = "vadPreset"
+        static let startStopHotkey = "startStopHotkey"
     }
 
     static let captionFontSizeRange: ClosedRange<Double> = 14...40
@@ -80,6 +81,10 @@ final class Preferences {
         didSet { UserDefaults.standard.set(captionDisplayMode.rawValue, forKey: Key.captionDisplayMode) }
     }
 
+    var startStopHotkey: GlobalHotkey {
+        didSet { UserDefaults.standard.set(startStopHotkey.rawValue, forKey: Key.startStopHotkey) }
+    }
+
     /// Remembered caption window origin, or nil if never saved.
     var captionWindowOrigin: CGPoint? {
         didSet {
@@ -120,6 +125,8 @@ final class Preferences {
         )
         let displayRaw = d.string(forKey: Key.captionDisplayMode) ?? CaptionDisplayMode.bilingual.rawValue
         captionDisplayMode = CaptionDisplayMode(rawValue: displayRaw) ?? .bilingual
+        let hotkeyRaw = d.string(forKey: Key.startStopHotkey) ?? GlobalHotkey.defaultShortcut.rawValue
+        startStopHotkey = GlobalHotkey(rawValue: hotkeyRaw) ?? .defaultShortcut
 
         if d.object(forKey: Key.captionOriginX) != nil {
             let x = d.double(forKey: Key.captionOriginX)
