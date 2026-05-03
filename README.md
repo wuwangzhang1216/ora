@@ -53,6 +53,13 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 - ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
+### What's new in 0.6.0
+
+- New Transcript History window for browsing past sessions inside Ora
+- Search, copy, refresh, and export transcript sessions without opening JSONL files manually
+- Preferences reorganized into General, Captions, Advanced, and History tabs
+- Faster access to transcript history from the menu bar and caption hover controls
+
 ### What's new in 0.5.1
 
 - Configurable macOS Start / Stop Listening hotkey in Preferences

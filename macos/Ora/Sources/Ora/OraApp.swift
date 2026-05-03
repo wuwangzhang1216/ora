@@ -47,12 +47,50 @@ final class PreferencesWindowPresenter {
 
         let hosting = NSHostingController(rootView: PreferencesView(engine: engine))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Ora Preferences"
+        window.contentViewController = hosting
+        window.isReleasedWhenClosed = false
+        window.center()
+        self.window = window
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.window = nil }
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
+@MainActor
+final class TranscriptHistoryWindowPresenter {
+    static let shared = TranscriptHistoryWindowPresenter()
+    private var window: NSWindow?
+
+    func show() {
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hosting = NSHostingController(rootView: TranscriptHistoryView())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Transcript History"
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.center()
@@ -274,6 +312,11 @@ struct MenuContent: View {
                 suggestedName: "ora-history-\(TranscriptExportCoordinator.timestamp())"
             )
         }
+
+        Button("Transcript History…") {
+            TranscriptHistoryWindowPresenter.shared.show()
+        }
+        .keyboardShortcut("y", modifiers: .command)
 
         Button("Open History Folder") {
             NSWorkspace.shared.activateFileViewerSelecting(

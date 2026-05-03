@@ -103,6 +103,10 @@ struct CaptionView: View {
                 PreferencesWindowPresenter.shared.show(engine: engine)
             }
 
+            ControlButton(systemImage: "clock.arrow.circlepath", help: "Transcript history") {
+                TranscriptHistoryWindowPresenter.shared.show()
+            }
+
             ControlButton(systemImage: "doc.on.doc", help: "Copy translation") {
                 copyCurrentTranslation()
             }
