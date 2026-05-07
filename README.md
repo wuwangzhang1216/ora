@@ -53,6 +53,12 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 - ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
+### What's new in 0.6.1
+
+- Experimental Rapid-MLX backend for lower-latency local translation in the macOS app
+- Preferences toggle for MLX Swift vs Rapid-MLX, with configurable local server URL and model name
+- Rapid-MLX benchmark tooling and documented setup for the Python reference CLI
+
 ### What's new in 0.6.0
 
 - New Transcript History window for browsing past sessions inside Ora
