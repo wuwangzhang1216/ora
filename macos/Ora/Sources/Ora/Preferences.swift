@@ -25,6 +25,9 @@ final class Preferences {
         static let captionDisplayMode = "captionDisplayMode"
         static let vadPreset = "vadPreset"
         static let startStopHotkey = "startStopHotkey"
+        static let llmBackend = "llmBackend"
+        static let rapidMLXURL = "rapidMLXURL"
+        static let rapidMLXModel = "rapidMLXModel"
     }
 
     static let captionFontSizeRange: ClosedRange<Double> = 14...40
@@ -85,6 +88,18 @@ final class Preferences {
         didSet { UserDefaults.standard.set(startStopHotkey.rawValue, forKey: Key.startStopHotkey) }
     }
 
+    var llmBackend: LLMBackendKind {
+        didSet { UserDefaults.standard.set(llmBackend.rawValue, forKey: Key.llmBackend) }
+    }
+
+    var rapidMLXURL: String {
+        didSet { UserDefaults.standard.set(rapidMLXURL, forKey: Key.rapidMLXURL) }
+    }
+
+    var rapidMLXModel: String {
+        didSet { UserDefaults.standard.set(rapidMLXModel, forKey: Key.rapidMLXModel) }
+    }
+
     /// Remembered caption window origin, or nil if never saved.
     var captionWindowOrigin: CGPoint? {
         didSet {
@@ -127,6 +142,10 @@ final class Preferences {
         captionDisplayMode = CaptionDisplayMode(rawValue: displayRaw) ?? .bilingual
         let hotkeyRaw = d.string(forKey: Key.startStopHotkey) ?? GlobalHotkey.defaultShortcut.rawValue
         startStopHotkey = GlobalHotkey(rawValue: hotkeyRaw) ?? .defaultShortcut
+        let backendRaw = d.string(forKey: Key.llmBackend) ?? LLMBackendKind.mlxSwift.rawValue
+        llmBackend = LLMBackendKind(rawValue: backendRaw) ?? .mlxSwift
+        rapidMLXURL = d.string(forKey: Key.rapidMLXURL) ?? Config.rapidMLXURL
+        rapidMLXModel = d.string(forKey: Key.rapidMLXModel) ?? Config.rapidMLXModel
 
         if d.object(forKey: Key.captionOriginX) != nil {
             let x = d.double(forKey: Key.captionOriginX)

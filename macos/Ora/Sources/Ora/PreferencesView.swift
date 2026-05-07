@@ -64,7 +64,7 @@ struct PreferencesView: View {
                 Label("History", systemImage: "clock.arrow.circlepath")
             }
         }
-        .frame(width: 500, height: 560)
+        .frame(width: 500, height: 620)
         .navigationTitle("Ora Preferences")
         .confirmationDialog(
             "Delete all transcript history?",
@@ -111,13 +111,41 @@ struct PreferencesView: View {
                 engine.applyTargetLanguageChange()
             }
 
-            Picker("Quality", selection: $prefs.quality) {
-                ForEach(TranslatorQuality.allCases, id: \.self) { q in
-                    Text(q.displayName).tag(q)
+            Picker("LLM Backend", selection: $prefs.llmBackend) {
+                ForEach(LLMBackendKind.allCases, id: \.self) { backend in
+                    Text(backend.displayName).tag(backend)
                 }
             }
-            .onChange(of: prefs.quality) { _, _ in
+            .onChange(of: prefs.llmBackend) { _, _ in
                 Task { await engine.reload() }
+            }
+            Text(prefs.llmBackend.helpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if prefs.llmBackend == .mlxSwift {
+                Picker("Quality", selection: $prefs.quality) {
+                    ForEach(TranslatorQuality.allCases, id: \.self) { q in
+                        Text(q.displayName).tag(q)
+                    }
+                }
+                .onChange(of: prefs.quality) { _, _ in
+                    Task { await engine.reload() }
+                }
+            } else {
+                TextField("Rapid-MLX URL", text: $prefs.rapidMLXURL)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Model", text: $prefs.rapidMLXModel)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button("Reconnect Translator") {
+                        Task { await engine.reload() }
+                    }
+                    Spacer()
+                }
+                Text("Start Rapid-MLX separately, then reconnect. Example: rapid-mlx serve qwen3.5-4b --served-model-name default --port 8000 --no-thinking")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

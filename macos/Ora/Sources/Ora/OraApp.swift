@@ -47,7 +47,7 @@ final class PreferencesWindowPresenter {
 
         let hosting = NSHostingController(rootView: PreferencesView(engine: engine))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -116,6 +116,10 @@ struct OraApp: App {
     @State private var engine: TranslatorEngine
 
     init() {
+        if CommandLine.arguments.contains("--rapid-mlx-smoke-test") {
+            Self.runRapidMLXSmokeTestAndExit()
+        }
+
         FileHandle.standardError.write("[app] init\n".data(using: .utf8) ?? Data())
         NSApplication.shared.setActivationPolicy(.accessory)
         let openPreferencesOnLaunch = CommandLine.arguments.contains("--open-preferences-on-launch")
@@ -144,6 +148,45 @@ struct OraApp: App {
                 PreferencesWindowPresenter.shared.show(engine: e)
             }
         }
+    }
+
+    nonisolated private static func runRapidMLXSmokeTestAndExit() {
+        Task.detached {
+            do {
+                let args = CommandLine.arguments
+                let baseURL = argumentValue("--rapid-mlx-url", in: args) ?? Config.rapidMLXURL
+                let model = argumentValue("--rapid-mlx-model", in: args) ?? Config.rapidMLXModel
+                let target = argumentValue("--target", in: args) ?? "Chinese"
+                let text = argumentValue("--text", in: args)
+                    ?? "Could you walk me through the latency numbers from yesterday's demo?"
+
+                let translator = try await RapidMLXTranslator.load(
+                    baseURL: baseURL,
+                    model: model,
+                    targetLanguage: target
+                )
+                let translated = try await translator.translate(text)
+                var streamed = ""
+                for try await chunk in translator.translateStream(text) {
+                    streamed += chunk
+                }
+                print("nonstream=\(translated)")
+                print("stream=\(streamed)")
+                exit(0)
+            } catch {
+                FileHandle.standardError.write("Rapid-MLX smoke test failed: \(error)\n".data(using: .utf8) ?? Data())
+                exit(1)
+            }
+        }
+        dispatchMain()
+    }
+
+    nonisolated private static func argumentValue(_ name: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: name),
+              arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return arguments[index + 1]
     }
 
     var body: some Scene {
