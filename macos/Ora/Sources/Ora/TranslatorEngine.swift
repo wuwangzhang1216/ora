@@ -29,6 +29,7 @@ final class TranslatorEngine {
     /// observe and display without binding to Preferences directly.
     var targetLanguage: String { Preferences.shared.targetLanguage }
     var quality: TranslatorQuality { Preferences.shared.quality }
+    var llmBackend: LLMBackendKind { Preferences.shared.llmBackend }
 
     // MARK: - Private
 
@@ -36,7 +37,7 @@ final class TranslatorEngine {
 
     private var asr: ASRClient?
     private var vad: VADSegmenter?
-    private var backend: MLXChatTranslator?
+    private var backend: (any TranslationBackend)?
     private var audioSource: AudioSource?
     private var eventLoopTask: Task<Void, Never>?
     private var partialPipe: PartialPipelineUI?
@@ -56,26 +57,49 @@ final class TranslatorEngine {
         let target = prefs.targetLanguage
         let asrLang = prefs.asrLanguage
         let asrModel = asrModelId
+        let backendKind = prefs.llmBackend
+        let rapidMLXURL = prefs.rapidMLXURL
+        let rapidMLXModel = prefs.rapidMLXModel
 
         do {
             async let vadTask = VADSegmenter.load()
             async let asrTask = ASRClient.load(modelId: asrModel, language: asrLang)
-            async let backendTask = MLXChatTranslator.load(
-                modelId: modelId,
-                targetLanguage: target,
-                onProgress: { fraction, desc in
-                    Task { @MainActor [weak self] in
-                        let label = desc.isEmpty ? "Downloading translator…" : desc
-                        self?.phase = .loading(status: label, progress: fraction)
-                    }
+            let backendTask = Task<any TranslationBackend, Error> {
+                switch backendKind {
+                case .mlxSwift:
+                    return try await MLXChatTranslator.load(
+                        modelId: modelId,
+                        targetLanguage: target,
+                        onProgress: { fraction, desc in
+                            Task { @MainActor [weak self] in
+                                let label = desc.isEmpty ? "Downloading translator…" : desc
+                                self?.phase = .loading(status: label, progress: fraction)
+                            }
+                        }
+                    )
+                case .rapidMLX:
+                    return try await RapidMLXTranslator.load(
+                        baseURL: rapidMLXURL,
+                        model: rapidMLXModel,
+                        targetLanguage: target
+                    )
                 }
-            )
+            }
+
+            if backendKind == .rapidMLX {
+                phase = .loading(status: "Connecting Rapid-MLX…", progress: 0.2)
+            }
 
             self.vad = try await vadTask
             phase = .loading(status: "Loading ASR…", progress: 0.33)
             self.asr = try await asrTask
-            phase = .loading(status: "Loading translator…", progress: 0.66)
-            self.backend = try await backendTask
+            switch backendKind {
+            case .mlxSwift:
+                phase = .loading(status: "Loading translator…", progress: 0.66)
+            case .rapidMLX:
+                phase = .loading(status: "Warming Rapid-MLX…", progress: 0.66)
+            }
+            self.backend = try await backendTask.value
 
             phase = .ready
         } catch {

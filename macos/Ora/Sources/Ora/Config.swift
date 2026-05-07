@@ -20,6 +20,9 @@ enum Config {
 
     static let partialIntervalS: Double = 0.6     // rolling partial cadence (~500 ms is industry norm)
     static let partialMinGrowthS: Double = 0.3    // skip partial unless buffer grew this much
+
+    static let rapidMLXURL = "http://127.0.0.1:8000/v1"
+    static let rapidMLXModel = "default"
 }
 
 enum AudioSourceKind: String, CaseIterable {
@@ -52,6 +55,27 @@ enum CaptionDisplayMode: String, CaseIterable {
         case .bilingual: return "Shows source text above the translation."
         case .translationOnly: return "Hides source text for a cleaner caption card."
         case .compact: return "Uses a narrower card with tighter spacing for calls and screen sharing."
+        }
+    }
+}
+
+enum LLMBackendKind: String, CaseIterable {
+    case mlxSwift
+    case rapidMLX
+
+    var displayName: String {
+        switch self {
+        case .mlxSwift: return "MLX Swift"
+        case .rapidMLX: return "Rapid-MLX"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .mlxSwift:
+            return "Runs the translator inside Ora. Best for the packaged app and offline use."
+        case .rapidMLX:
+            return "Connects to a local Rapid-MLX OpenAI-compatible server for lower-latency experiments."
         }
     }
 }

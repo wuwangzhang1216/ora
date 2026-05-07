@@ -110,6 +110,23 @@ The native macOS app includes the same daily-use tuning as the reference CLI:
 
 Switch at any time from the menu bar → **Quality**. Higher tiers are more accurate but slower and use more memory; the weights download automatically on first use.
 
+### Experimental Rapid-MLX backend
+
+Ora's macOS app defaults to in-process MLX Swift translation. For latency experiments, Preferences → **General** → **LLM Backend** can switch the app to a local Rapid-MLX server.
+
+```bash
+uv pip install --python .venv/bin/python rapid-mlx
+.venv/bin/rapid-mlx serve qwen3.5-4b \
+  --served-model-name default \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --no-thinking \
+  --pin-system-prompt \
+  --stream-interval 1
+```
+
+Then choose **Rapid-MLX** in Preferences, keep the URL as `http://127.0.0.1:8000/v1`, and click **Reconnect Translator**. This is opt-in; packaged releases still work offline with MLX Swift and do not manage the Rapid-MLX process.
+
 ## How it works
 
 ```

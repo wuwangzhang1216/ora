@@ -32,5 +32,11 @@
     <!-- Required for AVAudioEngine mic input on macOS 10.14+. -->
     <key>NSMicrophoneUsageDescription</key>
     <string>Real-time speech translation needs microphone access.</string>
+    <!-- Allow the experimental Rapid-MLX backend to call a local HTTP server. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

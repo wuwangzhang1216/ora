@@ -11,7 +11,7 @@ actor PartialPipeline {
     typealias DrawCallback = @Sendable (_ source: String, _ translated: String) -> Void
 
     private let asr: ASRClient
-    private let backend: MLXChatTranslator
+    private let backend: any TranslationBackend
     private let drawPartial: DrawCallback
 
     private var latest: [Float]?
@@ -20,7 +20,7 @@ actor PartialPipeline {
     private var workerTask: Task<Void, Never>?
     private var wakeContinuation: AsyncStream<Void>.Continuation?
 
-    init(asr: ASRClient, backend: MLXChatTranslator, drawPartial: @escaping DrawCallback) {
+    init(asr: ASRClient, backend: any TranslationBackend, drawPartial: @escaping DrawCallback) {
         self.asr = asr
         self.backend = backend
         self.drawPartial = drawPartial
