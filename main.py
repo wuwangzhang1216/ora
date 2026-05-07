@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Pure-local real-time translator
-Silero VAD + on-device ASR (via mls) + on-device translator LLM (via Ollama)
+Silero VAD + on-device ASR (via mls) + on-device translator LLM (via Ollama or Rapid-MLX)
 
 Architecture:
   Mic → sounddevice (16kHz PCM) → Silero VAD → utterance
       → mls HTTP (ASR, MLX) → text
-      → Ollama HTTP (translator LLM, streaming) → translated text → terminal
+      → local LLM HTTP (translator LLM, streaming) → translated text → terminal
 
-No network calls. No API keys. Everything on-device (Metal GPU via MLX + Ollama).
+No network calls. No API keys. Everything on-device.
 """
 
 import argparse
@@ -51,6 +51,9 @@ QUALITY_MODELS = {
 DEFAULT_QUALITY = "standard"
 DEFAULT_OLLAMA_MODEL = QUALITY_MODELS[DEFAULT_QUALITY]
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_LLM_BACKEND = "ollama"
+DEFAULT_RAPID_MLX_URL = "http://localhost:8000/v1"
+DEFAULT_RAPID_MLX_MODEL = "default"
 DEFAULT_MLS_URL = "http://127.0.0.1:18321"
 SAMPLE_RATE = 16000
 VAD_FRAME_SAMPLES = 512           # Silero requires exactly 512 samples @ 16kHz (~32ms)
@@ -79,6 +82,11 @@ Rules:
 - Translate even short fragments, hesitations ("uh", "嗯"), and incomplete sentences literally.
 - Never output an empty response; if truly nothing to translate, echo the input.\
 """
+
+
+def build_translation_prompt(target_lang: str, text: str) -> str:
+    return f"Translate to {target_lang}. Output only the translation.\n\nSource: {text}\n{target_lang}: "
+
 
 VAD_PRESETS = {
     "quiet": {
@@ -263,8 +271,12 @@ def run_preflight(args, ui: "TranslatorUI") -> bool:
     rows: list[tuple[str, bool, str]] = []
 
     rows.append(("Python deps", True, "loaded"))
-    ollama_path = shutil.which("ollama")
-    rows.append(("Ollama binary", ollama_path is not None, ollama_path or "install with: brew install ollama"))
+    if args.llm_backend == "ollama":
+        ollama_path = shutil.which("ollama")
+        rows.append(("Ollama binary", ollama_path is not None, ollama_path or "install with: brew install ollama"))
+    else:
+        rapid_path = shutil.which("rapid-mlx")
+        rows.append(("Rapid-MLX binary", rapid_path is not None, rapid_path or "install with: pip install rapid-mlx"))
 
     try:
         device_id = resolve_device_id(args.device)
@@ -282,16 +294,30 @@ def run_preflight(args, ui: "TranslatorUI") -> bool:
     except Exception as e:
         rows.append(("mls ASR server", False, str(e)))
 
-    try:
-        r = requests.get(f"{args.ollama_url.rstrip('/')}/api/tags", timeout=2)
-        r.raise_for_status()
-        models = [m["name"] for m in r.json().get("models", [])]
-        matched = any(args.ollama_model in m or args.ollama_model.split(":")[0] in m for m in models)
-        rows.append(("Translator model", matched, args.ollama_model if matched else f"pull with: ollama pull {args.ollama_model}"))
-    except requests.ConnectionError:
-        rows.append(("Ollama server", False, "start with: ollama serve"))
-    except Exception as e:
-        rows.append(("Ollama server", False, str(e)))
+    if args.llm_backend == "ollama":
+        try:
+            r = requests.get(f"{args.ollama_url.rstrip('/')}/api/tags", timeout=2)
+            r.raise_for_status()
+            models = [m["name"] for m in r.json().get("models", [])]
+            matched = any(args.ollama_model in m or args.ollama_model.split(":")[0] in m for m in models)
+            rows.append(("Translator model", matched, args.ollama_model if matched else f"pull with: ollama pull {args.ollama_model}"))
+        except requests.ConnectionError:
+            rows.append(("Ollama server", False, "start with: ollama serve"))
+        except Exception as e:
+            rows.append(("Ollama server", False, str(e)))
+    else:
+        try:
+            r = requests.get(f"{args.rapid_mlx_url.rstrip('/')}/models", timeout=2)
+            r.raise_for_status()
+            model_ids = [m.get("id", "") for m in r.json().get("data", []) if isinstance(m, dict)]
+            detail = args.rapid_mlx_model
+            if model_ids:
+                detail = f"{args.rapid_mlx_model} ({', '.join(model_ids[:3])})"
+            rows.append(("Rapid-MLX server", True, detail))
+        except requests.ConnectionError:
+            rows.append(("Rapid-MLX server", False, f"start with: rapid-mlx serve qwen3.5-4b --port 8000"))
+        except Exception as e:
+            rows.append(("Rapid-MLX server", False, str(e)))
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("status", width=2)
@@ -843,6 +869,112 @@ class OllamaTranslator:
 
 
 # ──────────────────────────────────────────────
+# Rapid-MLX translator
+# ──────────────────────────────────────────────
+
+class RapidMLXTranslator:
+    """Calls a local Rapid-MLX OpenAI-compatible server for translation."""
+
+    def __init__(
+        self,
+        ui: TranslatorUI,
+        model: str = DEFAULT_RAPID_MLX_MODEL,
+        base_url: str = DEFAULT_RAPID_MLX_URL,
+        target_lang: str = "Chinese",
+    ):
+        self.ui = ui
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api = f"{self.base_url}/chat/completions"
+        self.target_lang = target_lang
+        self._check_server()
+        self._warmup()
+
+    def _messages(self, text: str) -> list[dict[str, str]]:
+        prompt = build_translation_prompt(self.target_lang, text)
+        return [{"role": "user", "content": prompt}]
+
+    def _check_server(self):
+        """Verify the OpenAI-compatible Rapid-MLX server is reachable."""
+        try:
+            r = requests.get(f"{self.base_url}/models", timeout=5)
+            r.raise_for_status()
+        except requests.ConnectionError:
+            self.ui.err(f"Cannot connect to Rapid-MLX at {self.base_url}")
+            self.ui.info("Run: rapid-mlx serve qwen3.5-4b --port 8000")
+            sys.exit(1)
+        except Exception as e:
+            self.ui.err(f"Rapid-MLX readiness check failed: {e}")
+            sys.exit(1)
+
+    def _warmup(self):
+        """Force Rapid-MLX to finish lazy setup before the first real request."""
+        try:
+            requests.post(
+                self.api,
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": False,
+                    "temperature": 0.0,
+                    "max_tokens": 1,
+                },
+                timeout=120,
+            )
+        except Exception as e:
+            self.ui.warn(f"Rapid-MLX warmup failed: {e}")
+
+    def translate(self, text: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": self._messages(text),
+            "stream": False,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 512,
+        }
+        try:
+            r = requests.post(self.api, json=payload, timeout=30)
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"].get("content", "").strip()
+        except Exception as e:
+            return f"[translate error: {e}]"
+
+    def translate_stream(self, text: str):
+        payload = {
+            "model": self.model,
+            "messages": self._messages(text),
+            "stream": True,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "max_tokens": 512,
+        }
+        try:
+            r = requests.post(self.api, json=payload, timeout=30, stream=True)
+            r.raise_for_status()
+            for raw_line in r.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                if isinstance(raw_line, bytes):
+                    raw_line = raw_line.decode("utf-8")
+                line = raw_line.strip()
+                if line.startswith("data:"):
+                    line = line.removeprefix("data:").strip()
+                if line == "[DONE]":
+                    break
+                chunk = json.loads(line)
+                choices = chunk.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
+                token = delta.get("content") or ""
+                if token:
+                    yield token
+        except Exception as e:
+            yield f"[error: {e}]"
+
+
+# ──────────────────────────────────────────────
 # Partial transcription worker
 # ──────────────────────────────────────────────
 
@@ -850,7 +982,7 @@ class PartialPipeline:
     """Background worker: ASR + non-streaming LLM translate on the latest partial audio.
     Publishes results into the UI status bar. Drops stale work when new audio arrives."""
 
-    def __init__(self, asr: MlsASRClient, translator: OllamaTranslator, ui: TranslatorUI):
+    def __init__(self, asr: MlsASRClient, translator: OllamaTranslator | RapidMLXTranslator, ui: TranslatorUI):
         self.asr = asr
         self.translator = translator
         self.ui = ui
@@ -954,12 +1086,20 @@ def run(args):
     ui.ok(f"mls connected  [dim]({args.mls_url})[/]")
 
     with ui.console.status(f"[cyan]Warming up translator ({args.quality_label})…", spinner="dots"):
-        translator = OllamaTranslator(
-            ui,
-            model=args.ollama_model,
-            base_url=args.ollama_url,
-            target_lang=args.target,
-        )
+        if args.llm_backend == "rapid-mlx":
+            translator = RapidMLXTranslator(
+                ui,
+                model=args.rapid_mlx_model,
+                base_url=args.rapid_mlx_url,
+                target_lang=args.target,
+            )
+        else:
+            translator = OllamaTranslator(
+                ui,
+                model=args.ollama_model,
+                base_url=args.ollama_url,
+                target_lang=args.target,
+            )
     ui.ok(f"Translator ready  [dim]({args.quality_label})[/]")
     ui.console.print()
 
@@ -1073,7 +1213,7 @@ def run_demo(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pure-local real-time translator: on-device ASR (mls) + on-device LLM (Ollama)",
+        description="Pure-local real-time translator: on-device ASR (mls) + on-device LLM (Ollama or Rapid-MLX)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -1086,6 +1226,10 @@ Examples:
   # Bump translation quality
   python main.py --quality high
   python main.py --quality extra-high
+
+  # Use Rapid-MLX instead of Ollama
+  rapid-mlx serve qwen3.5-4b --port 8000
+  python main.py --llm-backend rapid-mlx
 
   # Run a visual demo without mic / mls / Ollama
   python main.py --demo --save-session --output-format markdown
@@ -1115,6 +1259,12 @@ Examples:
         help=f"Translator quality tier (default: {DEFAULT_QUALITY})",
     )
     parser.add_argument(
+        "--llm-backend",
+        choices=["ollama", "rapid-mlx"],
+        default=DEFAULT_LLM_BACKEND,
+        help=f"Local translator backend (default: {DEFAULT_LLM_BACKEND})",
+    )
+    parser.add_argument(
         "--ollama-model",
         default=None,
         help="Override the Ollama model id (bypasses --quality)",
@@ -1123,6 +1273,16 @@ Examples:
         "--ollama-url",
         default=DEFAULT_OLLAMA_URL,
         help="Ollama API URL (default: http://localhost:11434)",
+    )
+    parser.add_argument(
+        "--rapid-mlx-model",
+        default=DEFAULT_RAPID_MLX_MODEL,
+        help=f"Rapid-MLX model name sent to /v1/chat/completions (default: {DEFAULT_RAPID_MLX_MODEL})",
+    )
+    parser.add_argument(
+        "--rapid-mlx-url",
+        default=DEFAULT_RAPID_MLX_URL,
+        help=f"Rapid-MLX OpenAI-compatible base URL (default: {DEFAULT_RAPID_MLX_URL})",
     )
     parser.add_argument(
         "--vad-threshold",
@@ -1199,6 +1359,8 @@ Examples:
     else:
         args.ollama_model = QUALITY_MODELS[args.quality]
         args.quality_label = args.quality.replace("-", " ").title()
+    if args.llm_backend == "rapid-mlx":
+        args.quality_label = f"Rapid-MLX {args.rapid_mlx_model}"
 
     preset = VAD_PRESETS[args.preset]
     if args.vad_threshold == VAD_THRESHOLD:

@@ -136,7 +136,7 @@ Four stages run entirely on the Metal GPU via [MLX Swift](https://github.com/ml-
   <em>Live rich-terminal UI — status bar, per-utterance source + translation, scrolling history, and a real-time VAD probability meter.</em>
 </p>
 
-A Python implementation lives in [`main.py`](main.py) — the same architecture as the Ora macOS app, built on top of `mls` (an MLX model serving daemon) for ASR and Ollama for translation. It's useful for:
+A Python implementation lives in [`main.py`](main.py) — the same architecture as the Ora macOS app, built on top of `mls` (an MLX model serving daemon) for ASR and a local LLM server for translation. Ollama remains the default backend; Rapid-MLX is available as an experimental low-latency backend. It's useful for:
 
 - Running on macOS versions that don't meet the Ora app's 15.0 requirement
 - Reading / forking a fully open-source implementation of the same pipeline
@@ -156,6 +156,44 @@ The CLI mirrors the Ora app's endpointing and partial-commit cadence, and expose
 ./run.sh --quality high
 ./run.sh --quality extra-high
 ```
+
+### Rapid-MLX backend experiment
+
+The CLI can also talk to a local [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX) OpenAI-compatible server. This keeps translation local while lowering LLM request latency in short real-time caption workloads.
+
+```bash
+# Install the optional server into the project venv
+uv pip install --python .venv/bin/python rapid-mlx
+
+# Start Rapid-MLX in another terminal
+.venv/bin/rapid-mlx serve qwen3.5-4b \
+  --served-model-name default \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --no-thinking \
+  --pin-system-prompt \
+  --stream-interval 1
+
+# Run the CLI against Rapid-MLX
+.venv/bin/python main.py --llm-backend rapid-mlx
+```
+
+Benchmark command:
+
+```bash
+.venv/bin/python tools/benchmark_llm_backends.py \
+  --backend rapid-mlx \
+  --runs 5 \
+  --warmup 2 \
+  --jsonl benchmark-results/rapid-mlx-qwen35-4b.jsonl
+```
+
+Local Qwen3.5 4B test results from 30 short translation requests:
+
+| Backend | Success | TTFT median | TTFT p95 | Total median | Total p95 |
+|---------|---------|-------------|----------|--------------|-----------|
+| Rapid-MLX | 30/30 | 111 ms | 123 ms | 202 ms | 227 ms |
+| Ollama | 30/30 | 224 ms | 257 ms | 428 ms | 487 ms |
 
 ### CLI UX tools
 
@@ -181,7 +219,7 @@ python main.py --list-devices
 ./run.sh --save-session --output-format srt
 ```
 
-On normal runs, Ora now performs a preflight readiness check before opening the mic: microphone availability, `mls`, Ollama, and the selected translator model. Use `--skip-preflight` only when you intentionally want the old direct-start behavior.
+On normal runs, Ora now performs a preflight readiness check before opening the mic: microphone availability, `mls`, the selected LLM backend, and the selected translator model. Use `--skip-preflight` only when you intentionally want the old direct-start behavior.
 
 See [setup.sh](setup.sh) and [run.sh](run.sh) for the full dependency chain.
 
