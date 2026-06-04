@@ -70,7 +70,9 @@ final class SystemAudioCapture: NSObject, AudioSource, SCStreamOutput, SCStreamD
     }
 
     func stream() -> AsyncStream<[Float]> {
-        AsyncStream { continuation in
+        // Bounded buffer so a stalled consumer can't make captured audio grow
+        // without bound; drop the oldest chunks to stay near real time.
+        AsyncStream(bufferingPolicy: .bufferingNewest(Config.maxPendingAudioChunks)) { continuation in
             self.continuation = continuation
             guard let scStream else {
                 continuation.finish()

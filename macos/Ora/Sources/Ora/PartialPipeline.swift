@@ -27,7 +27,10 @@ actor PartialPipeline {
     }
 
     func start() {
-        let wake = AsyncStream<Void> { continuation in
+        // Pure wake signal — processOne() always reads the latest snapshot, so
+        // coalescing redundant wakeups to a single pending token is correct and
+        // avoids spinning through stale signals when submits outpace the worker.
+        let wake = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
             self.wakeContinuation = continuation
         }
         workerTask = Task { [weak self] in

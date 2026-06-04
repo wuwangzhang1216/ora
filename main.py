@@ -72,6 +72,8 @@ MIN_UTTERANCE_MS = 300            # drop anything shorter
 MAX_UTTERANCE_S = 15              # safety cap for run-on speech
 PARTIAL_INTERVAL_S = 0.6          # rolling partial cadence (~500 ms is industry norm)
 PARTIAL_MIN_GROWTH_S = 0.3        # only re-ASR if buffer grew by this much
+MAX_AUDIO_QUEUE_S = 4.0           # cap on un-consumed mic audio; drop oldest beyond this
+                                  # so latency stays bounded while ASR/LLM block (see issue #4)
 OLLAMA_KEEP_ALIVE = "24h"         # keep LLM resident
 TRANSLATE_SYSTEM_PROMPT = """\
 You are a real-time speech translator. Translate the user's text into {target_lang}.
@@ -605,12 +607,43 @@ class VADSegmenter:
         self.partial_interval_s = partial_interval_s
         self.input_device = input_device
         self.model = load_silero_vad()
-        self.q: queue.Queue[np.ndarray] = queue.Queue()
+        # Bounded queue: the sole consumer is the main loop, which blocks for
+        # seconds on ASR + LLM per final utterance. With an unbounded queue the
+        # mic callback keeps appending during that block, so over a long session
+        # latency grows without bound — the pipeline ends up replaying minutes-old
+        # audio (apparent freeze + repeated translations, issue #4). Capping the
+        # backlog and dropping the oldest frames keeps us near real time.
+        max_items = max(1, int(MAX_AUDIO_QUEUE_S * self.sample_rate / VAD_FRAME_SAMPLES))
+        self.q: queue.Queue[np.ndarray] = queue.Queue(maxsize=max_items)
+        self._dropped_frames = 0
+        self._warned_drop = False
 
     def _callback(self, indata, frames, time_info, status):
         if status:
             self.ui.warn(f"audio: {status}")
-        self.q.put(indata[:, 0].copy())
+        chunk = indata[:, 0].copy()
+        try:
+            self.q.put_nowait(chunk)
+        except queue.Full:
+            # Consumer fell behind (long ASR/LLM). Drop the oldest frame to bound
+            # latency, then enqueue the newest. Losing audio captured while the
+            # main loop is blocked is unavoidable in this single-consumer design;
+            # bounding it is strictly better than an ever-growing backlog.
+            try:
+                self.q.get_nowait()
+                self._dropped_frames += 1
+            except queue.Empty:
+                pass
+            try:
+                self.q.put_nowait(chunk)
+            except queue.Full:
+                pass
+            if not self._warned_drop:
+                self._warned_drop = True
+                self.ui.warn(
+                    "audio backlog full — dropping frames to keep up "
+                    "(ASR/LLM slower than real time)"
+                )
 
     def _frames(self):
         """Yield fixed-size float32 frames (VAD_FRAME_SAMPLES) from the mic queue."""

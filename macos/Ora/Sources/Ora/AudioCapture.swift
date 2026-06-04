@@ -17,7 +17,9 @@ final class MicrophoneCapture: AudioSource, @unchecked Sendable {
     /// Start recording. Yields resampled 16 kHz float32 chunks until the task
     /// is cancelled.
     func stream() -> AsyncStream<[Float]> {
-        AsyncStream { continuation in
+        // Bounded buffer so a stalled consumer can't make captured audio grow
+        // without bound; drop the oldest chunks to stay near real time.
+        AsyncStream(bufferingPolicy: .bufferingNewest(Config.maxPendingAudioChunks)) { continuation in
             let inputNode = engine.inputNode
             let hwFormat = inputNode.outputFormat(forBus: 0)
 

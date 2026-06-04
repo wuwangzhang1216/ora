@@ -53,6 +53,11 @@ Grab the signed and notarized `Ora.dmg` from the [latest release](https://github
 - ~1.2 GB of model weights download on first launch
 - First launch prompts for microphone access — required for speech capture
 
+### What's new in 0.6.2
+
+- Fixed a freeze during long listening sessions where captions stopped updating and old translations repeated — the audio/VAD pipeline could fall ever further behind real time when ASR + translation were slower than incoming speech
+- Audio and VAD-event buffers are now bounded, so the pipeline sheds the oldest backlog instead of accumulating it without limit (applies to both the macOS app and the Python reference CLI)
+
 ### What's new in 0.6.1
 
 - Experimental Rapid-MLX backend for lower-latency local translation in the macOS app

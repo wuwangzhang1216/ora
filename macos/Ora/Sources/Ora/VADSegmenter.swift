@@ -32,7 +32,11 @@ final class VADSegmenter: @unchecked Sendable {
         endSilenceMs: Int = Config.speechEndMs,
         partialIntervalS: Double = Config.partialIntervalS
     ) -> AsyncStream<VADEvent> {
-        AsyncStream { continuation in
+        // Bounded buffer: if the downstream consumer stalls on ASR + LLM, this
+        // VAD task keeps emitting partials/finals. Dropping the oldest events
+        // beyond the cap keeps end-to-end latency bounded instead of letting a
+        // long session accumulate a minutes-deep backlog (freeze + repetition).
+        AsyncStream(bufferingPolicy: .bufferingNewest(Config.maxPendingVADEvents)) { continuation in
             let task = Task { [vad] in
                 let frameSize = Config.vadFrameSamples
                 let preRollFrames = max(1, Config.preRollMs / Config.vadFrameMs)
