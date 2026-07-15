@@ -117,7 +117,9 @@ final class Preferences {
         targetLanguage = d.string(forKey: Key.targetLanguage) ?? "English"
         let qualityRaw = d.string(forKey: Key.quality) ?? TranslatorQuality.standard.rawValue
         quality = TranslatorQuality(rawValue: qualityRaw) ?? .standard
-        asrLanguage = d.string(forKey: Key.asrLanguage) ?? "zh"
+        // nil = auto-detect (Qwen3-ASR language-IDs on its own). A hard "zh"
+        // default here biased ASR for every non-Chinese first-run user.
+        asrLanguage = d.string(forKey: Key.asrLanguage)
         let vt = d.object(forKey: Key.vadThreshold) as? Double
         vadThreshold = vt ?? Double(Config.vadThreshold)
         let em = d.object(forKey: Key.speechEndMs) as? Int

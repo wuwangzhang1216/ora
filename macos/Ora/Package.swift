@@ -36,5 +36,9 @@ let package = Package(
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ]
         ),
+        .testTarget(
+            name: "OraTests",
+            dependencies: ["Ora"]
+        ),
     ]
 )

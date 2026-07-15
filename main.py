@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -86,8 +87,22 @@ Rules:
 """
 
 
-def build_translation_prompt(target_lang: str, text: str) -> str:
-    return f"Translate to {target_lang}. Output only the translation.\n\nSource: {text}\n{target_lang}: "
+def build_translation_prompt(
+    target_lang: str, text: str, history: Sequence[tuple[str, str]] = ()
+) -> str:
+    """Continuation-style prompt. `history` carries recent committed
+    (source, translation) pairs as few-shot lines so pronouns, register, and
+    terminology stay consistent across VAD segments."""
+    prompt = f"Translate to {target_lang}. Output only the translation.\n\n"
+    for src, dst in history:
+        prompt += f"Source: {src}\n{target_lang}: {dst}\n\n"
+    prompt += f"Source: {text}\n{target_lang}: "
+    return prompt
+
+
+# Rolling-context caps, mirrored in the Swift app (TranslationContext).
+CONTEXT_MAX_EXCHANGES = 4
+CONTEXT_MAX_EXCHANGE_CHARS = 300
 
 
 VAD_PRESETS = {
@@ -727,8 +742,13 @@ class VADSegmenter:
                     end_by_silence = silence_run >= end_silence_frames
                     end_by_length = len(voiced) >= max_frames
                     if end_by_silence or end_by_length:
-                        if len(voiced) >= min_frames:
-                            self.model.reset_states()
+                        # Measure actual speech, not buffer length — the buffer
+                        # ends with the end-silence window, which alone exceeds
+                        # min_frames and made this guard dead code: noise blips
+                        # produced spurious finals (and hallucinated ASR).
+                        speech_frames = len(voiced) - silence_run
+                        self.model.reset_states()
+                        if speech_frames >= min_frames:
                             yield ("final", np.concatenate(voiced))
                         triggered = False
                         voiced = []
@@ -806,8 +826,18 @@ class OllamaTranslator:
         self.model = model
         self.api = f"{base_url}/api/chat"
         self.system_prompt = TRANSLATE_SYSTEM_PROMPT.format(target_lang=target_lang)
+        self._history: deque[tuple[str, str]] = deque(maxlen=CONTEXT_MAX_EXCHANGES)
         self._check_model(base_url)
         self._warmup()
+
+    def note_committed(self, source: str, translation: str):
+        """Record a committed pair for rolling cross-segment context."""
+        src, dst = source.strip(), translation.strip()
+        if src and dst and len(src) + len(dst) <= CONTEXT_MAX_EXCHANGE_CHARS:
+            self._history.append((src, dst))
+
+    def reset_context(self):
+        self._history.clear()
 
     def _check_model(self, base_url: str):
         """Verify model is available in Ollama."""
@@ -870,11 +900,18 @@ class OllamaTranslator:
             return f"[translate error: {e}]"
 
     def translate_stream(self, text: str):
-        """Send text to Ollama, yield translation tokens as they arrive."""
+        """Send text to Ollama, yield translation tokens as they arrive.
+        Finals carry rolling context as prior chat turns; partials
+        (non-streaming translate) stay minimal for latency."""
+        history_turns: list[dict[str, str]] = []
+        for src, dst in self._history:
+            history_turns.append({"role": "user", "content": src})
+            history_turns.append({"role": "assistant", "content": dst})
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
+                *history_turns,
                 {"role": "user", "content": text},
             ],
             "stream": True,
@@ -920,11 +957,23 @@ class RapidMLXTranslator:
         self.base_url = base_url.rstrip("/")
         self.api = f"{self.base_url}/chat/completions"
         self.target_lang = target_lang
+        self._history: deque[tuple[str, str]] = deque(maxlen=CONTEXT_MAX_EXCHANGES)
         self._check_server()
         self._warmup()
 
-    def _messages(self, text: str) -> list[dict[str, str]]:
-        prompt = build_translation_prompt(self.target_lang, text)
+    def note_committed(self, source: str, translation: str):
+        """Record a committed pair for rolling cross-segment context."""
+        src, dst = source.strip(), translation.strip()
+        if src and dst and len(src) + len(dst) <= CONTEXT_MAX_EXCHANGE_CHARS:
+            self._history.append((src, dst))
+
+    def reset_context(self):
+        self._history.clear()
+
+    def _messages(
+        self, text: str, history: Sequence[tuple[str, str]] = ()
+    ) -> list[dict[str, str]]:
+        prompt = build_translation_prompt(self.target_lang, text, history)
         return [{"role": "user", "content": prompt}]
 
     def _check_server(self):
@@ -976,7 +1025,7 @@ class RapidMLXTranslator:
     def translate_stream(self, text: str):
         payload = {
             "model": self.model,
-            "messages": self._messages(text),
+            "messages": self._messages(text, history=tuple(self._history)),
             "stream": True,
             "temperature": 0.3,
             "top_p": 0.9,
@@ -1024,6 +1073,8 @@ class PartialPipeline:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._frozen = threading.Event()
+        self._idle = threading.Event()
+        self._idle.set()
         self._last_text = ""
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -1035,7 +1086,13 @@ class PartialPipeline:
 
     def freeze(self):
         """Stop accepting partials. Call before final output."""
-        self._frozen.set()
+        with self._lock:
+            self._frozen.set()
+
+    def wait_quiescent(self, timeout: float = 10.0):
+        """Block until no partial ASR/translate is in flight, so the final's
+        inference doesn't contend with a doomed partial. Call after freeze()."""
+        self._idle.wait(timeout)
 
     def reset(self):
         """Prepare for the next utterance."""
@@ -1059,7 +1116,14 @@ class PartialPipeline:
             with self._lock:
                 audio = self._latest
                 self._latest = None
-            if audio is None or self._frozen.is_set():
+                if audio is None or self._frozen.is_set():
+                    audio = None
+                else:
+                    # Claim busy under the same lock freeze() takes, so
+                    # freeze(); wait_quiescent() can never slip past an
+                    # about-to-start iteration.
+                    self._idle.clear()
+            if audio is None:
                 continue
             try:
                 text = self.asr.transcribe(audio)
@@ -1073,6 +1137,8 @@ class PartialPipeline:
                 self.ui.set_partial_translation(translated)
             except Exception as e:
                 self.ui.warn(f"partial error: {e}")
+            finally:
+                self._idle.set()
 
 
 # ──────────────────────────────────────────────
@@ -1147,6 +1213,7 @@ def run(args):
 
                 # kind == "final": quiesce the worker, then print the final card.
                 partial_pipe.freeze()
+                partial_pipe.wait_quiescent()
                 ui.set_state("transcribing")
                 ui.set_partial_translation("")
 
@@ -1171,6 +1238,10 @@ def run(args):
 
                 ui.log_utterance(text, buffer, asr_ms, llm_ms)
                 recorder.add(text, buffer, asr_ms, llm_ms)
+                # Feed the committed pair back as rolling context — skip
+                # error markers so they never become few-shot examples.
+                if buffer and not buffer.startswith(("[error:", "[translate error:")):
+                    translator.note_committed(text, buffer)
                 partial_pipe.reset()
                 ui.set_state("listening")
     except KeyboardInterrupt:

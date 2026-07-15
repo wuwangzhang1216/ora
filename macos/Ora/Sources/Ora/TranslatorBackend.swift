@@ -6,8 +6,65 @@ import MLXLMCommon
 /// Minimal continuation-style prompt. Small models can't reliably follow
 /// multi-rule instructions; this format gives them almost no room to
 /// hallucinate — they just produce the next line.
-func buildTranslationPrompt(targetLanguage: String, text: String) -> String {
-    "Translate to \(targetLanguage). Output only the translation.\n\nSource: \(text)\n\(targetLanguage): "
+///
+/// `history` carries recent committed (source → translation) pairs as few-shot
+/// continuation lines, so pronouns, register, and terminology stay consistent
+/// across VAD segments instead of resetting at every utterance boundary.
+func buildTranslationPrompt(
+    targetLanguage: String,
+    text: String,
+    history: [TranslationExchange] = []
+) -> String {
+    var prompt = "Translate to \(targetLanguage). Output only the translation.\n\n"
+    for exchange in history {
+        prompt += "Source: \(exchange.source)\n\(targetLanguage): \(exchange.translation)\n\n"
+    }
+    prompt += "Source: \(text)\n\(targetLanguage): "
+    return prompt
+}
+
+struct TranslationExchange: Equatable {
+    let source: String
+    let translation: String
+}
+
+/// Thread-safe rolling window of recent committed translations. Finals include
+/// it as few-shot context; partials skip it to keep their prompts minimal.
+final class TranslationContext: @unchecked Sendable {
+    /// How many committed exchanges to carry. More context helps consistency
+    /// but every pair is re-prefilled on each final, so keep the window small.
+    static let maxExchanges = 4
+    /// Outsized segments (15s run-on utterances) would dominate the prompt —
+    /// skip them rather than truncate mid-sentence.
+    static let maxExchangeChars = 300
+
+    private let lock = NSLock()
+    private var exchanges: [TranslationExchange] = []
+
+    func note(source: String, translation: String) {
+        let src = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dst = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !src.isEmpty, !dst.isEmpty,
+              src.count + dst.count <= Self.maxExchangeChars else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        exchanges.append(TranslationExchange(source: src, translation: dst))
+        if exchanges.count > Self.maxExchanges {
+            exchanges.removeFirst(exchanges.count - Self.maxExchanges)
+        }
+    }
+
+    func snapshot() -> [TranslationExchange] {
+        lock.lock()
+        defer { lock.unlock() }
+        return exchanges
+    }
+
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        exchanges.removeAll()
+    }
 }
 
 protocol TranslationBackend: AnyObject, Sendable {
@@ -15,6 +72,34 @@ protocol TranslationBackend: AnyObject, Sendable {
 
     func translate(_ text: String) async throws -> String
     func translateStream(_ text: String) -> AsyncThrowingStream<String, Error>
+    /// Record a committed (source → translation) pair for rolling context.
+    func noteCommitted(source: String, translation: String)
+    /// Drop rolling context — call on target-language change or reload.
+    func resetContext()
+}
+
+/// Serializes generation on the shared ChatSession: `clear()` + generate must
+/// be atomic, otherwise a partial translate interleaving with a final's stream
+/// leaves the partial's exchange in the session history.
+private actor GenerationGate {
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if busy {
+            await withCheckedContinuation { waiters.append($0) }
+        } else {
+            busy = true
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            busy = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
 }
 
 /// Single MLX-swift-lm backed translator. Both quality tiers share this class —
@@ -22,8 +107,10 @@ protocol TranslationBackend: AnyObject, Sendable {
 /// in the chat template context.
 final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
     // ChatSession is not Sendable per mlx-swift-lm docs but is documented safe
-    // for one caller at a time (the underlying ModelContainer handles isolation).
+    // for one caller at a time — the GenerationGate enforces exactly that.
     private let session: ChatSession
+    private let gate = GenerationGate()
+    private let context = TranslationContext()
     /// Mutable so the engine can apply a target-language change without
     /// reloading the whole model — we're just swapping the prompt template.
     var targetLanguage: String
@@ -57,28 +144,55 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
 
         let session = ChatSession(
             container,
+            // Bounded, caption-shaped generation matching the Rapid-MLX backend
+            // config — the library default (temperature 0.6, unbounded tokens)
+            // is tuned for open-ended chat, not captions, and an unbounded
+            // runaway generation would stall the whole finals queue.
+            generateParameters: GenerateParameters(
+                maxTokens: 512,
+                temperature: 0.3,
+                topP: 0.9
+            ),
             additionalContext: ["enable_thinking": false]
         )
         FileHandle.standardError.write("\n[llm] ready.\n".data(using: .utf8) ?? Data())
         return MLXChatTranslator(session: session, targetLanguage: targetLanguage)
     }
 
-    private func prompt(for text: String) -> String {
-        buildTranslationPrompt(targetLanguage: targetLanguage, text: text)
+    func noteCommitted(source: String, translation: String) {
+        context.note(source: source, translation: translation)
     }
 
+    func resetContext() {
+        context.reset()
+    }
+
+    /// Partial-path translation: minimal prompt, no rolling context — partials
+    /// are transient and latency-critical, so we don't pay context prefill.
     func translate(_ text: String) async throws -> String {
+        let p = buildTranslationPrompt(targetLanguage: targetLanguage, text: text)
+        await gate.acquire()
+        defer { Task { await gate.release() } }
         await session.clear()
-        return try await session.respond(to: prompt(for: text))
+        return try await session.respond(to: p)
     }
 
+    /// Final-path translation: carries rolling few-shot context for
+    /// cross-segment consistency.
     func translateStream(_ text: String) -> AsyncThrowingStream<String, Error> {
-        let p = prompt(for: text)
+        let p = buildTranslationPrompt(
+            targetLanguage: targetLanguage,
+            text: text,
+            history: context.snapshot()
+        )
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
+                await self.gate.acquire()
+                defer { Task { await self.gate.release() } }
                 await self.session.clear()
                 do {
                     for try await chunk in self.session.streamResponse(to: p, images: [], videos: []) {
+                        try Task.checkCancellation()
                         continuation.yield(chunk)
                     }
                     continuation.finish()
@@ -86,6 +200,9 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            // Stop generating (not just consuming) when the caller walks away —
+            // e.g. Stop Listening mid-stream.
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }
@@ -153,6 +270,7 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
 
     private let model: String
     private let baseURL: String
+    private let context = TranslationContext()
     var targetLanguage: String
 
     private var chatCompletionsURL: URL {
@@ -190,6 +308,14 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
         return translator
     }
 
+    func noteCommitted(source: String, translation: String) {
+        context.note(source: source, translation: translation)
+    }
+
+    func resetContext() {
+        context.reset()
+    }
+
     func translate(_ text: String) async throws -> String {
         let request = try makeRequest(text: text, stream: false)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -204,13 +330,18 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
 
     func translateStream(_ text: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
-                    let request = try self.makeRequest(text: text, stream: true)
+                    let request = try self.makeRequest(
+                        text: text,
+                        stream: true,
+                        history: self.context.snapshot()
+                    )
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
                     try self.validate(response: response, body: nil)
 
                     for try await line in bytes.lines {
+                        try Task.checkCancellation()
                         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { continue }
 
@@ -235,6 +366,7 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -253,9 +385,10 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
         text: String,
         stream: Bool,
         maxTokens: Int = 512,
-        temperature: Double = 0.3
+        temperature: Double = 0.3,
+        history: [TranslationExchange] = []
     ) throws -> URLRequest {
-        let prompt = buildTranslationPrompt(targetLanguage: targetLanguage, text: text)
+        let prompt = buildTranslationPrompt(targetLanguage: targetLanguage, text: text, history: history)
         let body = ChatRequest(
             model: model,
             messages: [ChatMessage(role: "user", content: prompt)],

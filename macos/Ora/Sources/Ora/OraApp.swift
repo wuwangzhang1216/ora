@@ -275,6 +275,11 @@ struct MenuContent: View {
         }
         .keyboardShortcut(prefs.startStopHotkey.keyEquivalent, modifiers: prefs.startStopHotkey.eventModifiers)
 
+        if engine.droppedUtteranceCount > 0 {
+            // Overload shed sentences this session — never hide transcript loss.
+            Text("⚠︎ \(engine.droppedUtteranceCount) utterance\(engine.droppedUtteranceCount == 1 ? "" : "s") dropped (translation fell behind)")
+        }
+
         Divider()
 
         Menu("Target Language") {

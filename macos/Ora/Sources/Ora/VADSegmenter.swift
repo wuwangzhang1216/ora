@@ -11,10 +11,19 @@ enum VADEvent {
 /// Frame-level Silero VAD endpointing. Consumes an AsyncStream of mic audio chunks
 /// (any size) and emits partial / final events gated by speech activity.
 final class VADSegmenter: @unchecked Sendable {
-    private let vad: SileroVADModel
+    /// Speech probability for one 512-sample frame. Injected so the endpointing
+    /// state machine is testable without CoreML weights.
+    private let probe: ([Float]) -> Float
+    private let resetVADState: () -> Void
 
     init(vad: SileroVADModel) {
-        self.vad = vad
+        self.probe = { vad.processChunk($0) }
+        self.resetVADState = { vad.resetState() }
+    }
+
+    init(probe: @escaping ([Float]) -> Float, resetState: @escaping () -> Void = {}) {
+        self.probe = probe
+        self.resetVADState = resetState
     }
 
     static func load() async throws -> VADSegmenter {
@@ -37,7 +46,7 @@ final class VADSegmenter: @unchecked Sendable {
         // beyond the cap keeps end-to-end latency bounded instead of letting a
         // long session accumulate a minutes-deep backlog (freeze + repetition).
         AsyncStream(bufferingPolicy: .bufferingNewest(Config.maxPendingVADEvents)) { continuation in
-            let task = Task { [vad] in
+            let task = Task { [probe, resetVADState] in
                 let frameSize = Config.vadFrameSamples
                 let preRollFrames = max(1, Config.preRollMs / Config.vadFrameMs)
                 let endSilenceFrames = max(1, endSilenceMs / Config.vadFrameMs)
@@ -66,7 +75,7 @@ final class VADSegmenter: @unchecked Sendable {
                     while leftover.count >= frameSize {
                         let frame = Array(leftover.prefix(frameSize))
                         leftover.removeFirst(frameSize)
-                        let prob = vad.processChunk(frame)
+                        let prob = probe(frame)
 
                         // Hysteresis: use the HIGHER start threshold to decide
                         // when speech begins, and the LOWER stop threshold to
@@ -113,8 +122,14 @@ final class VADSegmenter: @unchecked Sendable {
                             let endBySilence = silenceRun >= endSilenceFrames
                             let endByLength = voiced.count >= maxFrames
                             if endBySilence || endByLength {
-                                if voiced.count >= minFrames {
-                                    vad.resetState()
+                                // Measure actual speech, not buffer length —
+                                // the buffer ends with the end-silence window,
+                                // which alone exceeds minFrames and made this
+                                // guard dead code: noise blips produced
+                                // spurious finals (and hallucinated ASR).
+                                let speechFrames = voiced.count - silenceRun
+                                resetVADState()
+                                if speechFrames >= minFrames {
                                     continuation.yield(.final(flatten(voiced)))
                                 }
                                 triggered = false

@@ -4,7 +4,9 @@
 .dist/
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved IS committed: the manifest tracks moving branches
+# (mlx-swift-lm main), so without the lockfile every fresh checkout
+# resolves different upstream code and builds are not reproducible.
 
 ## Local-only docs (personal secrets, credential flow)
 PACKAGING.md

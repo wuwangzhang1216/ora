@@ -21,15 +21,17 @@ enum Config {
     static let partialIntervalS: Double = 0.6     // rolling partial cadence (~500 ms is industry norm)
     static let partialMinGrowthS: Double = 0.3    // skip partial unless buffer grew this much
 
-    // Backpressure caps. The event-loop consumer blocks for seconds on ASR + LLM
-    // per final utterance, but the VAD task keeps draining the mic and emitting
-    // events the whole time. With unbounded AsyncStream buffers, that backlog
-    // grows without bound over a long session — the pipeline ends up replaying
-    // minutes-old audio (apparent freeze + repeated translations). Bounding the
-    // buffers and dropping the oldest entries keeps latency bounded; under
-    // sustained overload we shed old audio rather than fall ever further behind.
+    // Backpressure caps. The dispatch loop consumes VAD events without blocking
+    // on inference (finals are handed to a separate worker queue), so these
+    // buffers stay near-empty in practice; the caps remain as a safety net so a
+    // stalled consumer can never accumulate a minutes-deep backlog again.
     static let maxPendingVADEvents = 24           // ~14s of partial/final backlog before shedding
     static let maxPendingAudioChunks = 256        // mic backlog cap (VAD normally drains in real time)
+
+    // Finals are queued FIFO for the worker and must never vanish silently:
+    // when sustained overload exceeds this cap, the oldest utterance is shed
+    // and counted so the UI can tell the user captions fell behind.
+    static let maxPendingFinalUtterances = 8
 
     static let rapidMLXURL = "http://127.0.0.1:8000/v1"
     static let rapidMLXModel = "default"

@@ -2,11 +2,18 @@ import Foundation
 import Qwen3ASR
 
 /// Thin wrapper around Qwen3ASRModel. The underlying `transcribe(...)` is synchronous
-/// and blocking — we expose an `async` facade that hops to a background executor so
-/// the caller can `await` without blocking its own actor.
+/// and blocking, so this actor runs on its own dispatch-queue executor: the
+/// seconds-long GPU call occupies that private thread instead of starving the
+/// shared cooperative pool that every other task in the app runs on.
 actor ASRClient {
     private let model: Qwen3ASRModel
     private let language: String?
+
+    private let inferenceQueue = DispatchSerialQueue(label: "ora.asr.inference", qos: .userInitiated)
+
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        inferenceQueue.asUnownedSerialExecutor()
+    }
 
     private init(model: Qwen3ASRModel, language: String?) {
         self.model = model

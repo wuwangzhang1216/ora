@@ -22,6 +22,9 @@ final class TranslatorEngine {
     var translationText: String = ""
     var isPartial: Bool = false
     var utteranceCount: Int = 0
+    /// Utterances shed because ASR+translation fell behind sustained speech.
+    /// Nonzero means the user lost sentences — surfaced, never silent.
+    var droppedUtteranceCount: Int = 0
 
     // MARK: - Config shortcut (read-only)
 
@@ -40,6 +43,8 @@ final class TranslatorEngine {
     private var backend: (any TranslationBackend)?
     private var audioSource: AudioSource?
     private var eventLoopTask: Task<Void, Never>?
+    private var finalsWorkerTask: Task<Void, Never>?
+    private var finalsQueue: FinalUtteranceQueue?
     private var partialPipe: PartialPipelineUI?
 
     nonisolated init() {}
@@ -123,6 +128,9 @@ final class TranslatorEngine {
     /// Lightweight update when only the target language changes — no model reload.
     func applyTargetLanguageChange() {
         backend?.targetLanguage = Preferences.shared.targetLanguage
+        // Rolling few-shot context holds translations in the OLD language —
+        // poisonous as examples for the new one.
+        backend?.resetContext()
     }
 
     // MARK: - Start / stop
@@ -164,6 +172,7 @@ final class TranslatorEngine {
         sourceText = ""
         translationText = ""
         isPartial = false
+        droppedUtteranceCount = 0
 
         // Snapshot user-tunable VAD thresholds from Preferences at start()
         // time so the slider in Preferences actually takes effect — new
@@ -172,7 +181,13 @@ final class TranslatorEngine {
         let prefStop = max(0.0, prefStart - Config.vadHysteresis)
         let prefEndSilenceMs = Preferences.shared.speechEndMs
 
-        eventLoopTask = Task.detached { [weak self, vad, asr, backend, source] in
+        let queue = FinalUtteranceQueue()
+        self.finalsQueue = queue
+
+        // Dispatch loop: consumes VAD events WITHOUT blocking on inference, so
+        // the event buffer can never back up into shedding. Finals are handed
+        // to the worker below; a slow translation no longer stalls VAD.
+        eventLoopTask = Task.detached { [weak self, vad, source] in
             let audioStream = source.stream()
             let events = vad.events(
                 from: audioStream,
@@ -182,7 +197,7 @@ final class TranslatorEngine {
             )
 
             for await event in events {
-                guard let self else { return }
+                guard let self else { break }
                 switch event {
                 case .speechStart:
                     // Mark current content as "stale" but DON'T clear it —
@@ -198,70 +213,123 @@ final class TranslatorEngine {
                     await pipe.submit(audio)
 
                 case .final(let audio):
-                    let segmentStart = Date()
+                    // Freeze now (fast — just a flag) so a stale partial of
+                    // THIS utterance can't paint over the final's stream;
+                    // the worker waits for in-flight partial work before
+                    // touching the GPU.
                     await pipe.freeze()
-                    let text = await asr.transcribe(audio)
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed.count < 2 {
-                        await pipe.reset()
-                        continue
-                    }
-
-                    // Commit the final ASR source text, but DO NOT clear
-                    // translationText — that would flash the card to an
-                    // empty / placeholder state for ~300ms before the LLM's
-                    // first token arrives. We let the incoming stream
-                    // replace the previous partial translation atomically.
-                    await MainActor.run {
-                        self.sourceText = text
-                        self.utteranceCount += 1
-                        self.isPartial = false
-                    }
-
-                    var fullTranslation = ""
-                    var gotFirstChunk = false
-                    do {
-                        for try await chunk in backend.translateStream(text) {
-                            fullTranslation += chunk
-                            let snapshot = fullTranslation
-                            let isFirst = !gotFirstChunk
-                            gotFirstChunk = true
-                            await MainActor.run {
-                                // First token of the final stream replaces
-                                // the old partial text directly — no empty
-                                // intermediate state.
-                                _ = isFirst
-                                self.translationText = snapshot
+                    let dropped = await queue.enqueue(audio)
+                    if dropped > 0 {
+                        await MainActor.run {
+                            if dropped > self.droppedUtteranceCount {
+                                FileHandle.standardError.write(
+                                    "[engine] shed utterance under overload (total dropped: \(dropped))\n"
+                                        .data(using: .utf8) ?? Data()
+                                )
                             }
-                        }
-                    } catch {
-                        await MainActor.run {
-                            self.translationText = "[translate error: \(error)]"
+                            self.droppedUtteranceCount = dropped
                         }
                     }
+                }
+            }
+            await queue.finish()
+        }
 
-                    let finalTranslation = fullTranslation
-                    let finalSource = text
-                    if !finalTranslation.isEmpty {
-                        let endedAt = Date()
-                        await MainActor.run {
-                            let entry = TranscriptEntry(
-                                id: UUID(),
-                                startedAt: segmentStart,
-                                endedAt: endedAt,
-                                sourceText: finalSource,
-                                translationText: finalTranslation,
-                                sourceLanguageHint: Preferences.shared.asrLanguage,
-                                targetLanguage: Preferences.shared.targetLanguage,
-                                audioSource: Preferences.shared.audioSource.rawValue,
-                                sessionId: TranscriptHistory.shared.sessionId
-                            )
-                            TranscriptHistory.shared.append(entry)
-                        }
-                    }
-
+        // Finals worker: serially runs ASR + streamed translation per
+        // utterance, decoupled from VAD event consumption.
+        finalsWorkerTask = Task.detached { [weak self, asr, backend] in
+            while let audio = await queue.dequeue() {
+                if Task.isCancelled { break }
+                guard let self else { break }
+                await self.processFinal(
+                    audio: audio,
+                    pipe: pipe,
+                    asr: asr,
+                    backend: backend
+                )
+                // Unfreeze partials only once the backlog is drained — while
+                // more finals are queued, next-utterance partials would paint
+                // out-of-order content over committed translations.
+                if await queue.depth == 0 {
                     await pipe.reset()
                 }
+            }
+        }
+    }
+
+    /// One final utterance: ASR → commit source text → streamed translation →
+    /// transcript history. Runs on the finals worker, never on the dispatch loop.
+    nonisolated private func processFinal(
+        audio: [Float],
+        pipe: PartialPipelineUI,
+        asr: ASRClient,
+        backend: any TranslationBackend
+    ) async {
+        let segmentStart = Date()
+        // The dispatch loop froze the pipe at enqueue time; re-freezing here is
+        // an idempotent guard against the small window where the worker's
+        // drain-time reset raced a newly arriving final. Then wait out any
+        // in-flight partial ASR/translate so the final doesn't contend for
+        // the GPU.
+        await pipe.freeze()
+        await pipe.awaitQuiescence()
+
+        let text = await asr.transcribe(audio)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count < 2 {
+            return
+        }
+
+        // Commit the final ASR source text, but DO NOT clear
+        // translationText — that would flash the card to an
+        // empty / placeholder state for ~300ms before the LLM's
+        // first token arrives. We let the incoming stream
+        // replace the previous partial translation atomically.
+        await MainActor.run {
+            self.sourceText = text
+            self.utteranceCount += 1
+            self.isPartial = false
+        }
+
+        var fullTranslation = ""
+        do {
+            for try await chunk in backend.translateStream(text) {
+                fullTranslation += chunk
+                let snapshot = fullTranslation
+                await MainActor.run {
+                    // Each chunk replaces the old partial text directly —
+                    // no empty intermediate state.
+                    self.translationText = snapshot
+                }
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            await MainActor.run {
+                self.translationText = "[translate error: \(error)]"
+            }
+        }
+
+        let finalTranslation = fullTranslation
+        let finalSource = text
+        if !finalTranslation.isEmpty {
+            // Feed the committed pair back as rolling few-shot context so the
+            // next segment keeps pronouns/terminology consistent.
+            backend.noteCommitted(source: finalSource, translation: finalTranslation)
+            let endedAt = Date()
+            await MainActor.run {
+                let entry = TranscriptEntry(
+                    id: UUID(),
+                    startedAt: segmentStart,
+                    endedAt: endedAt,
+                    sourceText: finalSource,
+                    translationText: finalTranslation,
+                    sourceLanguageHint: Preferences.shared.asrLanguage,
+                    targetLanguage: Preferences.shared.targetLanguage,
+                    audioSource: Preferences.shared.audioSource.rawValue,
+                    sessionId: TranscriptHistory.shared.sessionId
+                )
+                TranscriptHistory.shared.append(entry)
             }
         }
     }
@@ -269,6 +337,12 @@ final class TranslatorEngine {
     func stop() {
         eventLoopTask?.cancel()
         eventLoopTask = nil
+        finalsWorkerTask?.cancel()
+        finalsWorkerTask = nil
+        Task { [finalsQueue] in
+            await finalsQueue?.finish()
+        }
+        finalsQueue = nil
         Task { [partialPipe] in
             await partialPipe?.shutdown()
         }
