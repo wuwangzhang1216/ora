@@ -132,6 +132,16 @@ struct PreferencesView: View {
                 .onChange(of: prefs.quality) { _, _ in
                     Task { await engine.reload() }
                 }
+
+                if prefs.quality.draftModelId != nil {
+                    Toggle("Speculative decoding (experimental)", isOn: $prefs.speculativeDecoding)
+                        .onChange(of: prefs.speculativeDecoding) { _, _ in
+                            Task { await engine.reload() }
+                        }
+                    Text("Adds a ~0.6 GB draft model that proposes tokens for the main model to verify — typically 1.5–2× faster translation with identical output. Skipped automatically if memory is tight.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 TextField("Rapid-MLX URL", text: $prefs.rapidMLXURL)
                     .textFieldStyle(.roundedBorder)

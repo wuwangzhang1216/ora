@@ -122,28 +122,40 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
 
     static func load(
         modelId: String,
+        draftModelId: String? = nil,
         targetLanguage: String,
         onProgress: (@Sendable (Double, String) -> Void)? = nil
     ) async throws -> MLXChatTranslator {
         FileHandle.standardError.write("[llm] loading \(modelId) ...\n".data(using: .utf8) ?? Data())
 
-        let container = try await loadModelContainer(
-            from: HubClient.default,
-            using: TokenizersLoader(),
-            id: modelId,
-            progressHandler: { progress in
-                let fraction = progress.fractionCompleted
-                let pct = Int(fraction * 100)
-                let desc = progress.localizedDescription ?? ""
-                FileHandle.standardError.write(
-                    "[llm] \(desc) \(pct)%\r".data(using: .utf8) ?? Data()
-                )
-                onProgress?(fraction, desc)
-            }
-        )
+        let container = try await Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
+
+        // Draft-model speculative decoding: the draft proposes tokens, the
+        // target verifies — output distribution is unchanged. Loaded eagerly
+        // so the download happens during prepare() with progress, not on the
+        // first utterance; the memory policy falls back to plain decoding on
+        // machines where target + draft exceed the recommended working set.
+        var speculative: SpeculativeDecodingConfig?
+        if let draftModelId {
+            FileHandle.standardError.write("[llm] loading draft \(draftModelId) ...\n".data(using: .utf8) ?? Data())
+            let draft = try await Self.loadContainer(
+                id: draftModelId,
+                label: "draft",
+                onProgress: onProgress.map { report in
+                    { fraction, desc in
+                        report(fraction, desc.isEmpty ? "Downloading draft model…" : desc)
+                    }
+                }
+            )
+            speculative = SpeculativeDecodingConfig(
+                draftModel: draft,
+                memoryPolicy: .recommendedWorkingSet
+            )
+        }
 
         let session = ChatSession(
             container,
+            speculativeDecoding: speculative,
             // Bounded, caption-shaped generation matching the Rapid-MLX backend
             // config — the library default (temperature 0.6, unbounded tokens)
             // is tuned for open-ended chat, not captions, and an unbounded
@@ -157,6 +169,27 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
         )
         FileHandle.standardError.write("\n[llm] ready.\n".data(using: .utf8) ?? Data())
         return MLXChatTranslator(session: session, targetLanguage: targetLanguage)
+    }
+
+    private static func loadContainer(
+        id: String,
+        label: String,
+        onProgress: (@Sendable (Double, String) -> Void)?
+    ) async throws -> ModelContainer {
+        try await loadModelContainer(
+            from: HubClient.default,
+            using: TokenizersLoader(),
+            id: id,
+            progressHandler: { progress in
+                let fraction = progress.fractionCompleted
+                let pct = Int(fraction * 100)
+                let desc = progress.localizedDescription ?? ""
+                FileHandle.standardError.write(
+                    "[\(label)] \(desc) \(pct)%\r".data(using: .utf8) ?? Data()
+                )
+                onProgress?(fraction, desc)
+            }
+        )
     }
 
     func noteCommitted(source: String, translation: String) {

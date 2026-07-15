@@ -130,6 +130,16 @@ enum TranslatorQuality: String, CaseIterable {
         }
     }
 
+    /// Draft model for speculative decoding (same tokenizer family required).
+    /// nil where the target is small enough that a draft can't pay for itself.
+    var draftModelId: String? {
+        switch self {
+        case .standard:  return nil
+        case .high, .extraHigh:
+            return "mlx-community/Qwen3.5-0.8B-MLX-4bit"   // ~0.6 GB
+        }
+    }
+
     var displayName: String {
         switch self {
         case .standard:  return "Standard (~1.2 GB)"

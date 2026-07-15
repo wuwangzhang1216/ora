@@ -15,7 +15,11 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/soniqo/speech-swift", from: "0.0.9"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        // Pinned to a stable tag: this repo's main moves fast and the app's
+        // LLM path (ChatSession, loadModelContainer) has broken on main
+        // drift before. 3.31.4 also brings ChatSession-level speculative
+        // decoding (SpeculativeDecodingConfig).
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.4"),
         // HF hub downloader — DePasqualeOrg/swift-hf-api. We vendor the ~50-line
         // Downloader adapter in MLXAdapters.swift because the upstream -mlx adapter
         // pins mlx-swift-lm to a conflicting SHA.

@@ -28,6 +28,7 @@ final class Preferences {
         static let llmBackend = "llmBackend"
         static let rapidMLXURL = "rapidMLXURL"
         static let rapidMLXModel = "rapidMLXModel"
+        static let speculativeDecoding = "speculativeDecoding"
     }
 
     static let captionFontSizeRange: ClosedRange<Double> = 14...40
@@ -100,6 +101,13 @@ final class Preferences {
         didSet { UserDefaults.standard.set(rapidMLXModel, forKey: Key.rapidMLXModel) }
     }
 
+    /// Draft-model speculative decoding for the in-process MLX backend
+    /// (High / Extra High tiers only). Opt-in: costs an extra ~0.6 GB
+    /// download + resident memory for roughly 1.5-2x faster decoding.
+    var speculativeDecoding: Bool {
+        didSet { UserDefaults.standard.set(speculativeDecoding, forKey: Key.speculativeDecoding) }
+    }
+
     /// Remembered caption window origin, or nil if never saved.
     var captionWindowOrigin: CGPoint? {
         didSet {
@@ -148,6 +156,7 @@ final class Preferences {
         llmBackend = LLMBackendKind(rawValue: backendRaw) ?? .mlxSwift
         rapidMLXURL = d.string(forKey: Key.rapidMLXURL) ?? Config.rapidMLXURL
         rapidMLXModel = d.string(forKey: Key.rapidMLXModel) ?? Config.rapidMLXModel
+        speculativeDecoding = d.bool(forKey: Key.speculativeDecoding)
 
         if d.object(forKey: Key.captionOriginX) != nil {
             let x = d.double(forKey: Key.captionOriginX)
