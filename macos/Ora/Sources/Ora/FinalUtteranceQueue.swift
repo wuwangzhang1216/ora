@@ -18,26 +18,28 @@ actor FinalUtteranceQueue {
         self.capacity = max(1, capacity)
     }
 
-    /// Returns the total number of utterances shed so far, so the caller can
-    /// surface "captions fell behind" without a second actor hop.
+    /// Returns true when this enqueue shed the oldest queued utterance, so the
+    /// caller can surface "captions fell behind" without a second actor hop.
     @discardableResult
-    func enqueue(_ audio: [Float]) -> Int {
-        guard !finished else { return droppedCount }
+    func enqueue(_ audio: [Float]) -> Bool {
+        guard !finished else { return false }
         if let waiter {
             self.waiter = nil
             waiter.resume(returning: audio)
-            return droppedCount
+            return false
         }
         items.append(audio)
         if items.count > capacity {
             items.removeFirst()
             droppedCount += 1
+            return true
         }
-        return droppedCount
+        return false
     }
 
     /// Suspends until an utterance is available; returns nil after `finish()`
-    /// once the backlog is drained.
+    /// once the backlog is drained, or immediately when the caller is
+    /// cancelled (so a stopped worker never hangs on a suspended dequeue).
     func dequeue() async -> [Float]? {
         if !items.isEmpty {
             return items.removeFirst()
@@ -45,7 +47,26 @@ actor FinalUtteranceQueue {
         if finished {
             return nil
         }
-        return await withCheckedContinuation { waiter = $0 }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Cancellation may have landed before we could suspend — the
+                // onCancel hop found no waiter, so resume ourselves.
+                if Task.isCancelled {
+                    continuation.resume(returning: nil)
+                } else {
+                    waiter = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.releaseWaiter() }
+        }
+    }
+
+    private func releaseWaiter() {
+        if let waiter {
+            self.waiter = nil
+            waiter.resume(returning: nil)
+        }
     }
 
     var depth: Int { items.count }

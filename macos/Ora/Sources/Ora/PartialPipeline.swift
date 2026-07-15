@@ -10,17 +10,30 @@ import Foundation
 actor PartialPipeline {
     typealias DrawCallback = @Sendable (_ source: String, _ translated: String) -> Void
 
+    /// Cap on how long the finals worker will wait for in-flight partial
+    /// inference — a hung partial (stalled server, runaway generation) must
+    /// not stall final captions forever. Mirrors main.py's wait_quiescent.
+    static let quiescenceTimeout: Duration = .seconds(10)
+
     private let asr: ASRClient
     private let backend: any TranslationBackend
     private let drawPartial: DrawCallback
 
     private var latest: [Float]?
     private var frozen = false
+    /// Bumped on every freeze. reset(ifGeneration:) uses it to no-op when a
+    /// newer freeze (= a newer final) arrived after the caller decided to
+    /// reset, so a late reset can never unfreeze someone else's freeze.
+    private var freezeGeneration = 0
     private var lastText = ""
     private var workerTask: Task<Void, Never>?
     private var wakeContinuation: AsyncStream<Void>.Continuation?
     private var processing = false
-    private var quiescenceWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private final class QuiescenceWaiter {
+        var continuation: CheckedContinuation<Void, Never>?
+    }
+    private var quiescenceWaiters: [QuiescenceWaiter] = []
 
     init(asr: ASRClient, backend: any TranslationBackend, drawPartial: @escaping DrawCallback) {
         self.asr = asr
@@ -53,29 +66,57 @@ actor PartialPipeline {
         }
     }
 
-    /// Stop accepting new partial work immediately. Any snapshot captured so
-    /// far belongs to the utterance being finalized and is discarded; work
-    /// already in flight keeps running — call `awaitQuiescence()` before
-    /// competing for the GPU.
-    func freeze() {
+    /// Stop accepting new partial work immediately (fast — just a flag).
+    /// `discardPending` drops the stored snapshot: true at final-dispatch time
+    /// (the snapshot belongs to the utterance being finalized), false for the
+    /// worker's defensive re-freeze (the snapshot belongs to the NEXT
+    /// utterance and must survive until reset re-wakes it).
+    /// Returns the new freeze generation for use with reset(ifGeneration:).
+    @discardableResult
+    func freeze(discardPending: Bool = true) -> Int {
         frozen = true
-        latest = nil
+        if discardPending {
+            latest = nil
+        }
+        freezeGeneration += 1
+        return freezeGeneration
     }
 
-    /// Wait until no partial ASR/translate is in flight. Separate from
-    /// `freeze()` so the (fast) dispatch loop can freeze without blocking on
-    /// seconds-long inference; only the finals worker pays the wait.
+    var generation: Int { freezeGeneration }
+
+    /// Wait until no partial ASR/translate is in flight (bounded by
+    /// `quiescenceTimeout`). Separate from `freeze()` so the (fast) dispatch
+    /// loop never blocks on inference; only the finals worker pays the wait.
     func awaitQuiescence() async {
+        let deadline = ContinuousClock.now + Self.quiescenceTimeout
         while processing {
-            await withCheckedContinuation { quiescenceWaiters.append($0) }
+            if ContinuousClock.now >= deadline { return }
+            let waiter = QuiescenceWaiter()
+            quiescenceWaiters.append(waiter)
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                waiter.continuation = c
+                Task { [weak self] in
+                    try? await Task.sleep(until: deadline, clock: .continuous)
+                    await self?.expire(waiter)
+                }
+            }
         }
     }
 
-    func reset() {
+    /// Timeout path: release one waiter even though work is still in flight.
+    private func expire(_ waiter: QuiescenceWaiter) {
+        guard let c = waiter.continuation else { return }
+        waiter.continuation = nil
+        quiescenceWaiters.removeAll { $0 === waiter }
+        c.resume()
+    }
+
+    /// Unfreeze — but only if no newer freeze happened since `expected` was
+    /// observed. Re-wakes the worker if a next-utterance snapshot is pending.
+    func reset(ifGeneration expected: Int) {
+        guard freezeGeneration == expected else { return }
         frozen = false
         lastText = ""
-        // A snapshot submitted while frozen belongs to the next utterance —
-        // resume it now instead of waiting for the next 0.6s partial tick.
         if latest != nil {
             wakeContinuation?.yield(())
         }
@@ -95,7 +136,12 @@ actor PartialPipeline {
             processing = false
             let waiters = quiescenceWaiters
             quiescenceWaiters.removeAll()
-            for waiter in waiters { waiter.resume() }
+            for waiter in waiters {
+                if let c = waiter.continuation {
+                    waiter.continuation = nil
+                    c.resume()
+                }
+            }
         }
 
         let text = await asr.transcribe(audio)

@@ -167,7 +167,7 @@ struct OraApp: App {
                 )
                 let translated = try await translator.translate(text)
                 var streamed = ""
-                for try await chunk in translator.translateStream(text) {
+                for try await chunk in translator.translateStream(text, history: []) {
                     streamed += chunk
                 }
                 print("nonstream=\(translated)")

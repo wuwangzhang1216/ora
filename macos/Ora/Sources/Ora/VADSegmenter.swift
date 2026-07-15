@@ -110,10 +110,13 @@ final class VADSegmenter: @unchecked Sendable {
                                 silenceRun += 1
                             }
 
-                            // Rolling partial emit
+                            // Rolling partial emit. Gate on actual speech
+                            // frames (buffer minus trailing silence) so a
+                            // mostly-silence buffer can't trigger a partial
+                            // that ASR would hallucinate text for.
                             let grewEnough = (voiced.count - lastPartialFrames) >= partialGrowthFrames
                             let timeElapsed = Date().timeIntervalSince(lastPartialTime) >= partialIntervalS
-                            if timeElapsed && grewEnough && voiced.count >= minFrames {
+                            if timeElapsed && grewEnough && (voiced.count - silenceRun) >= minFrames {
                                 continuation.yield(.partial(flatten(voiced)))
                                 lastPartialTime = Date()
                                 lastPartialFrames = voiced.count

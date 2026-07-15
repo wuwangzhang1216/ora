@@ -46,6 +46,10 @@ final class TranslatorEngine {
     private var finalsWorkerTask: Task<Void, Never>?
     private var finalsQueue: FinalUtteranceQueue?
     private var partialPipe: PartialPipelineUI?
+    /// Engine-owned rolling few-shot context (recent source → translation
+    /// pairs). Lives here — not on the backends — so it survives backend
+    /// reloads and every backend gets identical context behavior.
+    private let translationContext = TranslationContext()
 
     nonisolated init() {}
 
@@ -132,7 +136,7 @@ final class TranslatorEngine {
         backend?.targetLanguage = Preferences.shared.targetLanguage
         // Rolling few-shot context holds translations in the OLD language —
         // poisonous as examples for the new one.
-        backend?.resetContext()
+        translationContext.reset()
     }
 
     // MARK: - Start / stop
@@ -175,6 +179,9 @@ final class TranslatorEngine {
         translationText = ""
         isPartial = false
         droppedUtteranceCount = 0
+        // Each listening session is a fresh conversation — stale exchanges
+        // from hours ago would bias terminology and register.
+        translationContext.reset()
 
         // Snapshot user-tunable VAD thresholds from Preferences at start()
         // time so the slider in Preferences actually takes effect — new
@@ -220,16 +227,15 @@ final class TranslatorEngine {
                     // the worker waits for in-flight partial work before
                     // touching the GPU.
                     await pipe.freeze()
-                    let dropped = await queue.enqueue(audio)
-                    if dropped > 0 {
+                    let shed = await queue.enqueue(audio)
+                    if shed {
+                        FileHandle.standardError.write(
+                            "[engine] shed utterance under overload\n".data(using: .utf8) ?? Data()
+                        )
                         await MainActor.run {
-                            if dropped > self.droppedUtteranceCount {
-                                FileHandle.standardError.write(
-                                    "[engine] shed utterance under overload (total dropped: \(dropped))\n"
-                                        .data(using: .utf8) ?? Data()
-                                )
-                            }
-                            self.droppedUtteranceCount = dropped
+                            // Ignore a lame-duck loop from a previous session.
+                            guard self.finalsQueue === queue else { return }
+                            self.droppedUtteranceCount += 1
                         }
                     }
                 }
@@ -251,9 +257,13 @@ final class TranslatorEngine {
                 )
                 // Unfreeze partials only once the backlog is drained — while
                 // more finals are queued, next-utterance partials would paint
-                // out-of-order content over committed translations.
+                // out-of-order content over committed translations. The
+                // generation token makes a raced reset a no-op: if a new
+                // final freezes between our depth check and the reset, the
+                // generations no longer match.
+                let generation = await pipe.generation
                 if await queue.depth == 0 {
-                    await pipe.reset()
+                    await pipe.reset(ifGeneration: generation)
                 }
             }
         }
@@ -268,12 +278,14 @@ final class TranslatorEngine {
         backend: any TranslationBackend
     ) async {
         let segmentStart = Date()
-        // The dispatch loop froze the pipe at enqueue time; re-freezing here is
-        // an idempotent guard against the small window where the worker's
-        // drain-time reset raced a newly arriving final. Then wait out any
+        // The dispatch loop froze the pipe (discarding this utterance's stale
+        // snapshot) at enqueue time; re-freezing here is an idempotent guard
+        // against the small window where the worker's drain-time reset raced
+        // a newly arriving final — WITHOUT discarding a pending snapshot,
+        // which by now belongs to the next utterance. Then wait out any
         // in-flight partial ASR/translate so the final doesn't contend for
         // the GPU.
-        await pipe.freeze()
+        await pipe.freeze(discardPending: false)
         await pipe.awaitQuiescence()
 
         let text = await asr.transcribe(audio)
@@ -281,6 +293,8 @@ final class TranslatorEngine {
         if trimmed.count < 2 {
             return
         }
+
+        let targetAtStart = await MainActor.run { Preferences.shared.targetLanguage }
 
         // Commit the final ASR source text, but DO NOT clear
         // translationText — that would flash the card to an
@@ -295,7 +309,7 @@ final class TranslatorEngine {
 
         var fullTranslation = ""
         do {
-            for try await chunk in backend.translateStream(text) {
+            for try await chunk in backend.translateStream(text, history: translationContext.snapshot()) {
                 fullTranslation += chunk
                 let snapshot = fullTranslation
                 await MainActor.run {
@@ -304,22 +318,38 @@ final class TranslatorEngine {
                     self.translationText = snapshot
                 }
             }
-        } catch is CancellationError {
-            return
         } catch {
-            await MainActor.run {
-                self.translationText = "[translate error: \(error)]"
+            // A failed stream must not commit its truncated prefix to the
+            // transcript or to the rolling context (mirrors main.py).
+            if !(error is CancellationError) {
+                await MainActor.run {
+                    self.translationText = "[translate error: \(error)]"
+                }
             }
+            return
+        }
+        // Consumer-side cancellation (stop/reload mid-stream) ends the
+        // iteration WITHOUT throwing — don't commit the half translation.
+        if Task.isCancelled {
+            return
         }
 
         let finalTranslation = fullTranslation
         let finalSource = text
         if !finalTranslation.isEmpty {
-            // Feed the committed pair back as rolling few-shot context so the
-            // next segment keeps pronouns/terminology consistent.
-            backend.noteCommitted(source: finalSource, translation: finalTranslation)
             let endedAt = Date()
             await MainActor.run {
+                // Barge-in may have marked the card stale mid-stream; the
+                // completed final is committed content, restyle it as such.
+                self.translationText = finalTranslation
+                self.isPartial = false
+                // Feed the committed pair back as rolling few-shot context so
+                // the next segment keeps pronouns/terminology consistent —
+                // unless the target language changed while we streamed, in
+                // which case this pair is in the wrong language.
+                if Preferences.shared.targetLanguage == targetAtStart {
+                    self.translationContext.note(source: finalSource, translation: finalTranslation)
+                }
                 let entry = TranscriptEntry(
                     id: UUID(),
                     startedAt: segmentStart,
@@ -339,11 +369,11 @@ final class TranslatorEngine {
     func stop() {
         eventLoopTask?.cancel()
         eventLoopTask = nil
+        // dequeue() is cancellation-aware, so cancel() alone releases a
+        // suspended worker; the dispatch loop's queue.finish() on exit covers
+        // the end-of-stream path.
         finalsWorkerTask?.cancel()
         finalsWorkerTask = nil
-        Task { [finalsQueue] in
-            await finalsQueue?.finish()
-        }
         finalsQueue = nil
         Task { [partialPipe] in
             await partialPipe?.shutdown()

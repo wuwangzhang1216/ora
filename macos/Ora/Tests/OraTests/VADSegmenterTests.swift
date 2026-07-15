@@ -93,12 +93,15 @@ final class VADSegmenterTests: XCTestCase {
 
         var sawStart = 0
         var sawFinal = 0
+        var sawPartial = 0
         for event in events {
             if case .speechStart = event { sawStart += 1 }
             if case .final = event { sawFinal += 1 }
+            if case .partial = event { sawPartial += 1 }
         }
         XCTAssertEqual(sawStart, 1)
         XCTAssertEqual(sawFinal, 0, "sub-minimum utterances are rejected")
+        XCTAssertEqual(sawPartial, 0, "mostly-silence buffers must not emit partials")
     }
 
     func testHysteresisKeepsUtteranceAliveBetweenThresholds() async {

@@ -17,10 +17,12 @@ final class FinalUtteranceQueueTests: XCTestCase {
 
     func testShedsOldestAndCountsUnderOverload() async {
         let q = FinalUtteranceQueue(capacity: 2)
-        await q.enqueue([1])
-        await q.enqueue([2])
-        let dropped = await q.enqueue([3])
-        XCTAssertEqual(dropped, 1)
+        let shed1 = await q.enqueue([1])
+        let shed2 = await q.enqueue([2])
+        let shed3 = await q.enqueue([3])
+        XCTAssertFalse(shed1)
+        XCTAssertFalse(shed2)
+        XCTAssertTrue(shed3, "third enqueue into capacity-2 queue sheds")
         let depth = await q.depth
         XCTAssertEqual(depth, 2)
         let a = await q.dequeue()
@@ -29,6 +31,15 @@ final class FinalUtteranceQueueTests: XCTestCase {
         XCTAssertEqual(b, [3])
         let total = await q.droppedCount
         XCTAssertEqual(total, 1)
+    }
+
+    func testCancellingSuspendedDequeueReturnsNil() async {
+        let q = FinalUtteranceQueue(capacity: 2)
+        let waiter = Task { await q.dequeue() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        waiter.cancel()
+        let value = await waiter.value
+        XCTAssertNil(value, "a cancelled worker must not hang on dequeue")
     }
 
     func testEnqueueHandsOffDirectlyToWaitingDequeue() async {

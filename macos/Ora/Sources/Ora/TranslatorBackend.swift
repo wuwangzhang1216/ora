@@ -70,12 +70,13 @@ final class TranslationContext: @unchecked Sendable {
 protocol TranslationBackend: AnyObject, Sendable {
     var targetLanguage: String { get set }
 
+    /// Partial-path translation: minimal prompt, no context — transient and
+    /// latency-critical.
     func translate(_ text: String) async throws -> String
-    func translateStream(_ text: String) -> AsyncThrowingStream<String, Error>
-    /// Record a committed (source → translation) pair for rolling context.
-    func noteCommitted(source: String, translation: String)
-    /// Drop rolling context — call on target-language change or reload.
-    func resetContext()
+    /// Final-path translation. `history` is the engine-owned rolling context;
+    /// backends are stateless formatters so context survives backend reloads
+    /// and can't drift between implementations.
+    func translateStream(_ text: String, history: [TranslationExchange]) -> AsyncThrowingStream<String, Error>
 }
 
 /// Serializes generation on the shared ChatSession: `clear()` + generate must
@@ -110,7 +111,6 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
     // for one caller at a time — the GenerationGate enforces exactly that.
     private let session: ChatSession
     private let gate = GenerationGate()
-    private let context = TranslationContext()
     /// Mutable so the engine can apply a target-language change without
     /// reloading the whole model — we're just swapping the prompt template.
     var targetLanguage: String
@@ -128,29 +128,26 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
     ) async throws -> MLXChatTranslator {
         FileHandle.standardError.write("[llm] loading \(modelId) ...\n".data(using: .utf8) ?? Data())
 
-        let container = try await Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
-
         // Draft-model speculative decoding: the draft proposes tokens, the
         // target verifies — output distribution is unchanged. Loaded eagerly
-        // so the download happens during prepare() with progress, not on the
+        // (and concurrently with the target, since the downloads are
+        // independent I/O) so the fetch happens during prepare(), not on the
         // first utterance; the memory policy falls back to plain decoding on
         // machines where target + draft exceed the recommended working set.
+        // UI progress tracks only the (much larger) target download.
+        let container: ModelContainer
         var speculative: SpeculativeDecodingConfig?
         if let draftModelId {
             FileHandle.standardError.write("[llm] loading draft \(draftModelId) ...\n".data(using: .utf8) ?? Data())
-            let draft = try await Self.loadContainer(
-                id: draftModelId,
-                label: "draft",
-                onProgress: onProgress.map { report in
-                    { fraction, desc in
-                        report(fraction, desc.isEmpty ? "Downloading draft model…" : desc)
-                    }
-                }
-            )
+            async let mainLoad = Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
+            async let draftLoad = Self.loadContainer(id: draftModelId, label: "draft", onProgress: nil)
+            container = try await mainLoad
             speculative = SpeculativeDecodingConfig(
-                draftModel: draft,
+                draftModel: try await draftLoad,
                 memoryPolicy: .recommendedWorkingSet
             )
+        } else {
+            container = try await Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
         }
 
         let session = ChatSession(
@@ -192,44 +189,39 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
         )
     }
 
-    func noteCommitted(source: String, translation: String) {
-        context.note(source: source, translation: translation)
-    }
-
-    func resetContext() {
-        context.reset()
-    }
-
-    /// Partial-path translation: minimal prompt, no rolling context — partials
-    /// are transient and latency-critical, so we don't pay context prefill.
     func translate(_ text: String) async throws -> String {
         let p = buildTranslationPrompt(targetLanguage: targetLanguage, text: text)
         await gate.acquire()
-        defer { Task { await gate.release() } }
         await session.clear()
-        return try await session.respond(to: p)
+        do {
+            let result = try await session.respond(to: p)
+            await gate.release()
+            return result
+        } catch {
+            await gate.release()
+            throw error
+        }
     }
 
-    /// Final-path translation: carries rolling few-shot context for
-    /// cross-segment consistency.
-    func translateStream(_ text: String) -> AsyncThrowingStream<String, Error> {
+    func translateStream(_ text: String, history: [TranslationExchange]) -> AsyncThrowingStream<String, Error> {
         let p = buildTranslationPrompt(
             targetLanguage: targetLanguage,
             text: text,
-            history: context.snapshot()
+            history: history
         )
         return AsyncThrowingStream { continuation in
             let task = Task {
                 await self.gate.acquire()
-                defer { Task { await self.gate.release() } }
                 await self.session.clear()
                 do {
                     for try await chunk in self.session.streamResponse(to: p, images: [], videos: []) {
                         try Task.checkCancellation()
                         continuation.yield(chunk)
                     }
+                    await self.gate.release()
                     continuation.finish()
                 } catch {
+                    await self.gate.release()
                     continuation.finish(throwing: error)
                 }
             }
@@ -303,7 +295,6 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
 
     private let model: String
     private let baseURL: String
-    private let context = TranslationContext()
     var targetLanguage: String
 
     private var chatCompletionsURL: URL {
@@ -341,14 +332,6 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
         return translator
     }
 
-    func noteCommitted(source: String, translation: String) {
-        context.note(source: source, translation: translation)
-    }
-
-    func resetContext() {
-        context.reset()
-    }
-
     func translate(_ text: String) async throws -> String {
         let request = try makeRequest(text: text, stream: false)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -361,14 +344,14 @@ final class RapidMLXTranslator: TranslationBackend, @unchecked Sendable {
         return content
     }
 
-    func translateStream(_ text: String) -> AsyncThrowingStream<String, Error> {
+    func translateStream(_ text: String, history: [TranslationExchange]) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let request = try self.makeRequest(
                         text: text,
                         stream: true,
-                        history: self.context.snapshot()
+                        history: history
                     )
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
                     try self.validate(response: response, body: nil)

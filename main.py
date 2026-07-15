@@ -105,6 +105,21 @@ CONTEXT_MAX_EXCHANGES = 4
 CONTEXT_MAX_EXCHANGE_CHARS = 300
 
 
+def note_exchange(history: deque, source: str, translation: str) -> None:
+    """Record a committed (source, translation) pair for rolling context.
+    Skips empty, oversized, and error-marked output — an '[error: ...]'
+    marker can be appended mid-stream, so containment is checked, not just
+    the prefix."""
+    src, dst = source.strip(), translation.strip()
+    if not src or not dst:
+        return
+    if "[error:" in dst or "[translate error:" in dst:
+        return
+    if len(src) + len(dst) > CONTEXT_MAX_EXCHANGE_CHARS:
+        return
+    history.append((src, dst))
+
+
 VAD_PRESETS = {
     "quiet": {
         "vad_threshold": 0.42,
@@ -826,18 +841,8 @@ class OllamaTranslator:
         self.model = model
         self.api = f"{base_url}/api/chat"
         self.system_prompt = TRANSLATE_SYSTEM_PROMPT.format(target_lang=target_lang)
-        self._history: deque[tuple[str, str]] = deque(maxlen=CONTEXT_MAX_EXCHANGES)
         self._check_model(base_url)
         self._warmup()
-
-    def note_committed(self, source: str, translation: str):
-        """Record a committed pair for rolling cross-segment context."""
-        src, dst = source.strip(), translation.strip()
-        if src and dst and len(src) + len(dst) <= CONTEXT_MAX_EXCHANGE_CHARS:
-            self._history.append((src, dst))
-
-    def reset_context(self):
-        self._history.clear()
 
     def _check_model(self, base_url: str):
         """Verify model is available in Ollama."""
@@ -899,12 +904,12 @@ class OllamaTranslator:
         except Exception as e:
             return f"[translate error: {e}]"
 
-    def translate_stream(self, text: str):
+    def translate_stream(self, text: str, history: Sequence[tuple[str, str]] = ()):
         """Send text to Ollama, yield translation tokens as they arrive.
-        Finals carry rolling context as prior chat turns; partials
-        (non-streaming translate) stay minimal for latency."""
+        Finals carry the caller-owned rolling context as prior chat turns;
+        partials (non-streaming translate) stay minimal for latency."""
         history_turns: list[dict[str, str]] = []
-        for src, dst in self._history:
+        for src, dst in history:
             history_turns.append({"role": "user", "content": src})
             history_turns.append({"role": "assistant", "content": dst})
         payload = {
@@ -957,18 +962,8 @@ class RapidMLXTranslator:
         self.base_url = base_url.rstrip("/")
         self.api = f"{self.base_url}/chat/completions"
         self.target_lang = target_lang
-        self._history: deque[tuple[str, str]] = deque(maxlen=CONTEXT_MAX_EXCHANGES)
         self._check_server()
         self._warmup()
-
-    def note_committed(self, source: str, translation: str):
-        """Record a committed pair for rolling cross-segment context."""
-        src, dst = source.strip(), translation.strip()
-        if src and dst and len(src) + len(dst) <= CONTEXT_MAX_EXCHANGE_CHARS:
-            self._history.append((src, dst))
-
-    def reset_context(self):
-        self._history.clear()
 
     def _messages(
         self, text: str, history: Sequence[tuple[str, str]] = ()
@@ -1022,10 +1017,10 @@ class RapidMLXTranslator:
         except Exception as e:
             return f"[translate error: {e}]"
 
-    def translate_stream(self, text: str):
+    def translate_stream(self, text: str, history: Sequence[tuple[str, str]] = ()):
         payload = {
             "model": self.model,
-            "messages": self._messages(text, history=tuple(self._history)),
+            "messages": self._messages(text, history=history),
             "stream": True,
             "temperature": 0.3,
             "top_p": 0.9,
@@ -1203,6 +1198,9 @@ def run(args):
     ui.console.print()
 
     partial_pipe = PartialPipeline(stt, translator, ui)
+    # Rolling few-shot context is owned here — translators stay stateless
+    # formatters, mirroring the Swift engine.
+    context_history: deque[tuple[str, str]] = deque(maxlen=CONTEXT_MAX_EXCHANGES)
 
     try:
         with ui:
@@ -1231,17 +1229,16 @@ def run(args):
 
                 t0 = time.perf_counter()
                 buffer = ""
-                for token in translator.translate_stream(text):
+                for token in translator.translate_stream(text, history=tuple(context_history)):
                     buffer += token
                     ui.set_partial_translation(buffer)
                 llm_ms = (time.perf_counter() - t0) * 1000
 
                 ui.log_utterance(text, buffer, asr_ms, llm_ms)
                 recorder.add(text, buffer, asr_ms, llm_ms)
-                # Feed the committed pair back as rolling context — skip
-                # error markers so they never become few-shot examples.
-                if buffer and not buffer.startswith(("[error:", "[translate error:")):
-                    translator.note_committed(text, buffer)
+                # Feed the committed pair back as rolling context (error
+                # markers and oversized pairs are filtered inside).
+                note_exchange(context_history, text, buffer)
                 partial_pipe.reset()
                 ui.set_state("listening")
     except KeyboardInterrupt:
