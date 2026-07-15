@@ -43,6 +43,7 @@ xcodebuild \
     -configuration Release \
     -destination 'platform=macOS' \
     -derivedDataPath "$DERIVED" \
+    -skipPackagePluginValidation \
     build \
     -quiet
 

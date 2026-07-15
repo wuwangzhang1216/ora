@@ -32,6 +32,7 @@ if [ "$needs_build" = true ]; then
         -configuration Release \
         -destination 'platform=macOS' \
         -derivedDataPath "$DERIVED" \
+        -skipPackagePluginValidation \
         build \
         -quiet
 fi
