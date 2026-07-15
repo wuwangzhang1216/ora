@@ -63,7 +63,6 @@ final class TranslatorEngine {
 
         let prefs = Preferences.shared
         let modelId = prefs.quality.modelId
-        let draftModelId = prefs.speculativeDecoding ? prefs.quality.draftModelId : nil
         let target = prefs.targetLanguage
         let asrLang = prefs.asrLanguage
         let asrModel = asrModelId
@@ -79,7 +78,6 @@ final class TranslatorEngine {
                 case .mlxSwift:
                     return try await MLXChatTranslator.load(
                         modelId: modelId,
-                        draftModelId: draftModelId,
                         targetLanguage: target,
                         onProgress: { fraction, desc in
                             Task { @MainActor [weak self] in

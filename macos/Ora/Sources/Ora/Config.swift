@@ -130,15 +130,12 @@ enum TranslatorQuality: String, CaseIterable {
         }
     }
 
-    /// Draft model for speculative decoding (same tokenizer family required).
-    /// nil where the target is small enough that a draft can't pay for itself.
-    var draftModelId: String? {
-        switch self {
-        case .standard:  return nil
-        case .high, .extraHigh:
-            return "mlx-community/Qwen3.5-0.8B-MLX-4bit"   // ~0.6 GB
-        }
-    }
+    // NOTE: draft-model speculative decoding was tried and reverted — Qwen3.5
+    // is a hybrid model whose linear-attention layers use a MambaCache, which
+    // is not trimmable, and mlx-swift-lm's speculative decoding requires
+    // trimmable caches to roll back rejected draft tokens (verified by an
+    // end-to-end test: KVCacheError at first generation). Revisit when
+    // upstream lands Qwen3.5 MTP support (mlx-swift-lm PR #351).
 
     var displayName: String {
         switch self {

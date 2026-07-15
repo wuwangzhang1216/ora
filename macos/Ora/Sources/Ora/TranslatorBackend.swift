@@ -122,37 +122,19 @@ final class MLXChatTranslator: TranslationBackend, @unchecked Sendable {
 
     static func load(
         modelId: String,
-        draftModelId: String? = nil,
         targetLanguage: String,
         onProgress: (@Sendable (Double, String) -> Void)? = nil
     ) async throws -> MLXChatTranslator {
         FileHandle.standardError.write("[llm] loading \(modelId) ...\n".data(using: .utf8) ?? Data())
 
-        // Draft-model speculative decoding: the draft proposes tokens, the
-        // target verifies — output distribution is unchanged. Loaded eagerly
-        // (and concurrently with the target, since the downloads are
-        // independent I/O) so the fetch happens during prepare(), not on the
-        // first utterance; the memory policy falls back to plain decoding on
-        // machines where target + draft exceed the recommended working set.
-        // UI progress tracks only the (much larger) target download.
-        let container: ModelContainer
-        var speculative: SpeculativeDecodingConfig?
-        if let draftModelId {
-            FileHandle.standardError.write("[llm] loading draft \(draftModelId) ...\n".data(using: .utf8) ?? Data())
-            async let mainLoad = Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
-            async let draftLoad = Self.loadContainer(id: draftModelId, label: "draft", onProgress: nil)
-            container = try await mainLoad
-            speculative = SpeculativeDecodingConfig(
-                draftModel: try await draftLoad,
-                memoryPolicy: .recommendedWorkingSet
-            )
-        } else {
-            container = try await Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
-        }
+        // NOTE: draft-model speculative decoding is architecturally
+        // unavailable here — Qwen3.5's linear-attention layers use a
+        // non-trimmable MambaCache and mlx-swift-lm's speculation needs
+        // trimmable caches to roll back rejected tokens. See Config.swift.
+        let container = try await Self.loadContainer(id: modelId, label: "llm", onProgress: onProgress)
 
         let session = ChatSession(
             container,
-            speculativeDecoding: speculative,
             // Bounded, caption-shaped generation matching the Rapid-MLX backend
             // config — the library default (temperature 0.6, unbounded tokens)
             // is tuned for open-ended chat, not captions, and an unbounded
