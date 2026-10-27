@@ -92,9 +92,7 @@ struct PreferencesView: View {
                     Text(kind.displayName).tag(kind)
                 }
             }
-            Text(prefs.audioSource == .systemAudio
-                 ? "Captures audio played by other apps. Requires Screen Recording permission. Takes effect at next Start Listening."
-                 : "Captures your microphone input. Takes effect at next Start Listening.")
+            Text(prefs.audioSource.helpText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

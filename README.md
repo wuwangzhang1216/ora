@@ -49,11 +49,22 @@ Ora listens to your microphone and streams live translations of what you say int
 
 Grab `Ora.dmg` from the [latest release](https://github.com/wuwangzhang1216/ora/releases/latest), double-click to mount, and drag **Ora.app** to **Applications**.
 
-Release packages are signed with a Developer ID. Check the release notes for notarization status: **v0.8.0 is signed but not notarized** because Apple is requiring an updated developer agreement. macOS may block first launch until the package is notarized.
+Release packages are signed with a Developer ID. Check each release's notes for its notarization status. Older packages, including **v0.8.0**, were released without notarization and may trigger a macOS first-launch warning.
 
 - Requires **macOS 15 (Sequoia) or later** and an **Apple Silicon** Mac (M1/M2/M3/M4)
 - Model weights download on first launch; download size depends on the selected quality tier
 - First launch prompts for microphone access — required for speech capture
+
+### What's new in 0.9.0
+
+- New **Meeting (System + Microphone)** input captures both sides of a Zoom call into the same captions and transcript history
+- Align system and microphone audio by capture timestamps, with bounded mixing buffers and a short jitter allowance
+- Convert each input's native audio format separately, including 44.1 kHz microphones and 48 kHz system audio
+- Show microphone permission and capture startup/interruption errors without silently falling back to one-sided capture
+- Keep transcript source metadata tied to the input selected when the session starts
+- Preserve existing Microphone and System Audio preferences; select Meeting explicitly to enable both inputs
+
+Use headphones to reduce acoustic echo. Meeting mode mixes the inputs without identifying speakers or cancelling echo; simultaneous speech may reduce recognition accuracy. Ora captures the microphone independently of Zoom's mute button and saves text transcripts rather than audio recordings.
 
 ### What's new in 0.8.0
 
@@ -126,9 +137,23 @@ The native macOS app includes the same daily-use tuning as the reference CLI:
 
 ### Live captions for meetings
 
-For Zoom participants' voices, select **Preferences → General → Audio Input → System Audio**,
-then start listening. Select **Microphone** to caption your own voice. System Audio
-requires macOS Screen Recording permission and captures the system mix, including other apps.
+For both sides of a Zoom meeting, select **Preferences → General → Audio Input →
+Meeting (System + Microphone)**, then start listening. Ora captures other participants
+through system audio and your voice through the default macOS microphone, aligns the
+two streams in time, and transcribes/translates them into the same caption window
+and transcript history. Allow both microphone and Screen & System Audio Recording
+access when macOS asks. Select the same microphone in macOS Sound settings and Zoom.
+Ora captures the microphone independently of Zoom's mute button; stop listening in
+Ora when you want it to stop capturing your voice.
+
+Use headphones in Meeting mode: speaker output can enter the microphone and cause
+duplicate or echoing speech. This mode mixes the inputs; it does not identify speakers,
+cancel acoustic echo, or guarantee recognition of simultaneous speakers. System audio
+includes other apps, so mute unrelated media/notifications during a meeting. Ora saves
+text transcripts, not audio recordings. Input changes take effect at the next Start Listening.
+
+**System Audio** still captures only the computer's playback, and **Microphone** only
+your microphone. Existing input preferences are preserved.
 
 During speech, Ora displays the recognized source immediately and streams translated
 text as the local model generates it. A separate local caption scheduler breaks

@@ -38,13 +38,26 @@ enum Config {
 }
 
 enum AudioSourceKind: String, CaseIterable {
+    case meeting
     case microphone
     case systemAudio
 
     var displayName: String {
         switch self {
+        case .meeting: return "Meeting (System + Microphone)"
         case .microphone: return "Microphone"
         case .systemAudio: return "System Audio"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .meeting:
+            return "Captures other participants and your microphone in one transcript. Requires microphone and Screen & System Audio Recording access. Use headphones to avoid echo. Ora captures your mic even when Zoom is muted. Takes effect at next Start Listening."
+        case .microphone:
+            return "Captures your microphone input. Takes effect at next Start Listening."
+        case .systemAudio:
+            return "Captures audio played by other apps. Requires Screen & System Audio Recording permission. Takes effect at next Start Listening."
         }
     }
 }

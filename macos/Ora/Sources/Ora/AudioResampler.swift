@@ -25,10 +25,7 @@ final class AudioResampler {
     func resample(_ buffer: AVAudioPCMBuffer) -> [Float]? {
         let inFormat = buffer.format
 
-        if converter == nil
-            || converter?.inputFormat.sampleRate != inFormat.sampleRate
-            || converter?.inputFormat.channelCount != inFormat.channelCount
-        {
+        if converter == nil || converter?.inputFormat != inFormat {
             guard let conv = AVAudioConverter(from: inFormat, to: targetFormat) else {
                 return nil
             }

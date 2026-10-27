@@ -48,6 +48,7 @@ final class TranslatorEngine {
     private var vad: VADSegmenter?
     private var backend: (any TranslationBackend)?
     private var audioSource: AudioSource?
+    private var activeAudioSourceKind: AudioSourceKind?
     private var eventLoopTask: Task<Void, Never>?
     private var finalsWorkerTask: Task<Void, Never>?
     private var finalsQueue: FinalUtteranceQueue?
@@ -167,23 +168,33 @@ final class TranslatorEngine {
         let sourceKind = Preferences.shared.audioSource
         if let sourceOverride {
             source = sourceOverride
-        } else { switch sourceKind {
-        case .microphone:
-            source = MicrophoneCapture()
-        case .systemAudio:
-            source = await SystemAudioCapture.create()
-        } }
+        } else {
+            do {
+                switch sourceKind {
+                case .microphone:
+                    source = MicrophoneCapture()
+                case .systemAudio, .meeting:
+                    source = try await SystemAudioCapture.create(includeMicrophone: sourceKind == .meeting) { [weak self] message in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.listeningSession == session else { return }
+                            self.stop()
+                            self.phase = .error(message)
+                        }
+                    }
+                }
+            } catch {
+                guard listeningSession == session, phase == .ready else { return }
+                phase = .error(error.localizedDescription)
+                return
+            }
+        }
         guard listeningSession == session, phase == .ready else { return }
         guard let source else {
-            switch sourceKind {
-            case .microphone:
-                phase = .error("Failed to init microphone capture")
-            case .systemAudio:
-                phase = .error("System audio unavailable — grant Screen Recording permission in System Settings → Privacy & Security")
-            }
+            phase = .error("Failed to initialize audio capture.")
             return
         }
         self.audioSource = source
+        self.activeAudioSourceKind = sourceKind
 
         activeSession = ListeningSession(id: session)
         history.beginSession(id: session)
@@ -442,7 +453,7 @@ final class TranslatorEngine {
                     translationText: finalTranslation,
                     sourceLanguageHint: Preferences.shared.asrLanguage,
                     targetLanguage: Preferences.shared.targetLanguage,
-                    audioSource: Preferences.shared.audioSource.rawValue,
+                    audioSource: (self.activeAudioSourceKind ?? Preferences.shared.audioSource).rawValue,
                     sessionId: session
                 )
                 self.history.append(entry)
@@ -482,6 +493,7 @@ final class TranslatorEngine {
         }
         partialPipe = nil
         audioSource = nil
+        activeAudioSourceKind = nil
         if case .listening = phase {
             phase = .ready
         }
@@ -518,7 +530,7 @@ final class TranslatorEngine {
         let prefs = Preferences.shared
         activeSession?.update(utteranceID: id, source: source, translation: translation,
                               target: prefs.targetLanguage, sourceLanguage: prefs.asrLanguage,
-                              audioSource: prefs.audioSource.rawValue)
+                              audioSource: (activeAudioSourceKind ?? prefs.audioSource).rawValue)
     }
 
     private func clearCaptionDisplay() {
