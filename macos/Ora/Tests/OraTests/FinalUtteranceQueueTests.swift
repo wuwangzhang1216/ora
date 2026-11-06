@@ -2,6 +2,13 @@ import XCTest
 @testable import Ora
 
 final class FinalUtteranceQueueTests: XCTestCase {
+    func testConfirmedBoundaryMetadataSurvivesQueue() async {
+        let queue = FinalUtteranceQueue()
+        await queue.enqueue([1, 2], sourceOverride: "A confirmed sentence.", overlapSource: "Earlier sentence.")
+        let value = await queue.dequeueUtterance()
+        XCTAssertEqual(value?.sourceOverride, "A confirmed sentence.")
+        XCTAssertEqual(value?.overlapSource, "Earlier sentence.")
+    }
     func testUtteranceIdentitySurvivesQueueAndOverloadReportsDroppedID() async {
         let queue = FinalUtteranceQueue(capacity: 1)
         let first = UUID(), second = UUID()

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <title>Ora — Your personal simultaneous interpreter, on your Mac</title>
-  <meta name="description" content="Real-time speech translation, entirely on your Mac. Runs on Apple Silicon. No cloud, no account, no subscription. Free forever." />
+  <meta name="description" content="Real-time speech translation for Apple Silicon Macs. Runs on-device by default, with optional API backends." />
 
   <!-- Open Graph / Twitter -->
   <meta property="og:title" content="Ora — Your personal simultaneous interpreter" />
@@ -1329,7 +1329,7 @@
             <span class="tech-pill">MLX Swift</span>
           </div>
           <h3>Runs on your Mac.</h3>
-          <p>Every inference stage — voice activity detection, speech recognition, translation — runs on-device. Zero external servers.</p>
+          <p>Voice activity detection, speech recognition, and translation run on-device by default.</p>
         </div>
 
         <!-- INSTANT — latency readout + animated wave -->
@@ -1362,7 +1362,7 @@
             </div>
           </div>
           <h3>No internet. No problem.</h3>
-          <p>Airplane, subway, mountain trail — Ora works wherever your Mac does.</p>
+          <p>The local pipeline works offline after the first model download.</p>
         </div>
 
         <!-- PRIVATE — shield icon + zero-traffic stats -->
@@ -1377,12 +1377,12 @@
             </span>
           </div>
           <div class="stats" aria-hidden="true">
-            <div class="row"><span>audio uploaded</span><span class="zero">0 B</span></div>
+            <div class="row"><span>audio uploaded in local mode</span><span class="zero">0 B</span></div>
             <div class="row"><span>telemetry sent</span><span class="zero">0 events</span></div>
             <div class="row"><span>accounts required</span><span class="zero">0</span></div>
           </div>
-          <h3>Never leaves your Mac.</h3>
-          <p>Verify with Little Snitch. There's nothing outbound.</p>
+          <h3>Local by default.</h3>
+          <p>Optional RealRouter recognition sends audio to your configured provider. Optional RealRouter translation sends recognized text.</p>
         </div>
 
         <!-- ACCURATE — mini translation demo -->

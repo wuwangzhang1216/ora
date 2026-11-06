@@ -26,8 +26,11 @@ final class Preferences {
         static let vadPreset = "vadPreset"
         static let startStopHotkey = "startStopHotkey"
         static let llmBackend = "llmBackend"
+        static let recognitionBackend = "recognitionBackend"
         static let rapidMLXURL = "rapidMLXURL"
         static let rapidMLXModel = "rapidMLXModel"
+        static let realRouterURL = "realRouterURL"
+        static let realRouterModel = "realRouterModel"
     }
 
     static let captionFontSizeRange: ClosedRange<Double> = 14...40
@@ -92,6 +95,18 @@ final class Preferences {
         didSet { UserDefaults.standard.set(llmBackend.rawValue, forKey: Key.llmBackend) }
     }
 
+    var recognitionBackend: RecognitionBackendKind {
+        didSet { UserDefaults.standard.set(recognitionBackend.rawValue, forKey: Key.recognitionBackend) }
+    }
+
+    var realRouterURL: String {
+        didSet { UserDefaults.standard.set(realRouterURL, forKey: Key.realRouterURL) }
+    }
+
+    var realRouterModel: String {
+        didSet { UserDefaults.standard.set(realRouterModel, forKey: Key.realRouterModel) }
+    }
+
     var rapidMLXURL: String {
         didSet { UserDefaults.standard.set(rapidMLXURL, forKey: Key.rapidMLXURL) }
     }
@@ -146,8 +161,11 @@ final class Preferences {
         startStopHotkey = GlobalHotkey(rawValue: hotkeyRaw) ?? .defaultShortcut
         let backendRaw = d.string(forKey: Key.llmBackend) ?? LLMBackendKind.mlxSwift.rawValue
         llmBackend = LLMBackendKind(rawValue: backendRaw) ?? .mlxSwift
+        recognitionBackend = RecognitionBackendKind(rawValue: d.string(forKey: Key.recognitionBackend) ?? "local") ?? .local
         rapidMLXURL = d.string(forKey: Key.rapidMLXURL) ?? Config.rapidMLXURL
         rapidMLXModel = d.string(forKey: Key.rapidMLXModel) ?? Config.rapidMLXModel
+        realRouterURL = d.string(forKey: Key.realRouterURL) ?? Config.realRouterURL
+        realRouterModel = d.string(forKey: Key.realRouterModel) ?? Config.realRouterModel
 
         if d.object(forKey: Key.captionOriginX) != nil {
             let x = d.double(forKey: Key.captionOriginX)

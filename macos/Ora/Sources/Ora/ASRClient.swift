@@ -5,7 +5,7 @@ import Qwen3ASR
 /// and blocking, so this actor runs on its own dispatch-queue executor: the
 /// seconds-long GPU call occupies that private thread instead of starving the
 /// shared cooperative pool that every other task in the app runs on.
-actor ASRClient {
+actor ASRClient: SpeechRecognitionBackend {
     private let model: Qwen3ASRModel
     private let language: String?
 
@@ -37,7 +37,8 @@ actor ASRClient {
         model.transcribe(
             audio: audio,
             sampleRate: Config.sampleRate,
-            language: language
+            language: language,
+            maxTokens: max(448, min(2048, Int(Double(audio.count) / Double(Config.sampleRate) * 16) + 64))
         )
     }
 }

@@ -31,12 +31,15 @@ final class TranslatorEngine {
     /// Utterances shed because ASR+translation fell behind sustained speech.
     /// Nonzero means the user lost sentences — surfaced, never silent.
     var droppedUtteranceCount: Int = 0
+    /// A completed capture may still contain an untranslated utterance.
+    /// Keep this observable instead of treating an empty history as success.
+    private(set) var lastTranslationError: String?
 
     // MARK: - Config shortcut (read-only)
 
     /// Pulled from Preferences at prepare time; exposed so SwiftUI views can
     /// observe and display without binding to Preferences directly.
-    var targetLanguage: String { Preferences.shared.targetLanguage }
+    var targetLanguage: String { targetLanguageOverride ?? Preferences.shared.targetLanguage }
     var quality: TranslatorQuality { Preferences.shared.quality }
     var llmBackend: LLMBackendKind { Preferences.shared.llmBackend }
 
@@ -44,7 +47,7 @@ final class TranslatorEngine {
 
     private let asrModelId = "aufklarer/Qwen3-ASR-1.7B-MLX-8bit"
 
-    private var asr: ASRClient?
+    private var asr: (any SpeechRecognitionBackend)?
     private var vad: VADSegmenter?
     private var backend: (any TranslationBackend)?
     private var audioSource: AudioSource?
@@ -53,20 +56,41 @@ final class TranslatorEngine {
     private var finalsWorkerTask: Task<Void, Never>?
     private var finalsQueue: FinalUtteranceQueue?
     private var partialPipe: PartialPipelineUI?
-    private var partialRevision = CaptionRevision(previous: "")
+    private var speechAssembly: SpeechAssemblyCoordinator?
     private var displayedUtteranceID: UUID?
     private var latestTranslationID: UUID?
+    @ObservationIgnored private var streamedTranslation: (id: UUID, text: String)?
     private var listeningSession = UUID()
     private var activeSession: ListeningSession?
     private var receiptGeneration = UUID()
     private let historyOverride: TranscriptHistory?
+    private let targetLanguageOverride: String?
+    private let timing: PipelineTiming?
     private var history: TranscriptHistory { historyOverride ?? .shared }
     /// Engine-owned rolling few-shot context (recent source → translation
     /// pairs). Lives here — not on the backends — so it survives backend
     /// reloads and every backend gets identical context behavior.
     private let translationContext = TranslationContext()
 
-    nonisolated init(history: TranscriptHistory? = nil) { self.historyOverride = history }
+    nonisolated init(history: TranscriptHistory? = nil) {
+        self.historyOverride = history
+        self.targetLanguageOverride = nil
+        self.timing = nil
+    }
+
+    /// Inject ready components for deterministic pipeline replays without
+    /// model downloads or microphone/system capture.
+    init(history: TranscriptHistory, recognizer: any SpeechRecognitionBackend,
+         translator: any TranslationBackend, segmenter: VADSegmenter, targetLanguage: String? = nil,
+         timing: PipelineTiming? = nil) {
+        self.historyOverride = history
+        self.targetLanguageOverride = targetLanguage
+        self.timing = timing
+        self.asr = recognizer
+        self.backend = translator
+        self.vad = segmenter
+        self.phase = .ready
+    }
 
     // MARK: - Prepare / reload
 
@@ -82,12 +106,20 @@ final class TranslatorEngine {
         let asrLang = prefs.asrLanguage
         let asrModel = asrModelId
         let backendKind = prefs.llmBackend
+        let recognitionKind = prefs.recognitionBackend
         let rapidMLXURL = prefs.rapidMLXURL
         let rapidMLXModel = prefs.rapidMLXModel
+        let realRouterURL = prefs.realRouterURL
+        let realRouterModel = prefs.realRouterModel
 
         do {
+            let apiKey = (backendKind == .realRouter || recognitionKind == .realRouter)
+                ? try RealRouterCredentials.load() : ""
             async let vadTask = VADSegmenter.load()
-            async let asrTask = ASRClient.load(modelId: asrModel, language: asrLang)
+            async let asrTask: any SpeechRecognitionBackend = Self.loadRecognizer(
+                kind: recognitionKind, modelId: asrModel, language: asrLang,
+                baseURL: realRouterURL, apiKey: apiKey
+            )
             let backendTask = Task<any TranslationBackend, Error> {
                 switch backendKind {
                 case .mlxSwift:
@@ -107,6 +139,11 @@ final class TranslatorEngine {
                         model: rapidMLXModel,
                         targetLanguage: target
                     )
+                case .realRouter:
+                    return try await RealRouterTranslator.load(
+                        baseURL: realRouterURL, model: realRouterModel,
+                        apiKey: apiKey, targetLanguage: target
+                    )
                 }
             }
 
@@ -115,19 +152,39 @@ final class TranslatorEngine {
             }
 
             self.vad = try await vadTask
-            phase = .loading(status: "Loading ASR…", progress: 0.33)
+            phase = .loading(status: recognitionKind == .realRouter ? "Connecting speech API…" : "Loading ASR…", progress: 0.33)
             self.asr = try await asrTask
             switch backendKind {
             case .mlxSwift:
                 phase = .loading(status: "Loading translator…", progress: 0.66)
             case .rapidMLX:
                 phase = .loading(status: "Warming Rapid-MLX…", progress: 0.66)
+            case .realRouter:
+                phase = .loading(status: "Connecting RealRouter…", progress: 0.66)
             }
             self.backend = try await backendTask.value
 
             phase = .ready
         } catch {
-            phase = .error(String(describing: error))
+            phase = .error(error.localizedDescription)
+        }
+    }
+
+    nonisolated private static func loadRecognizer(kind: RecognitionBackendKind, modelId: String,
+                                                   language: String?, baseURL: String,
+                                                   apiKey: String) async throws -> any SpeechRecognitionBackend {
+        switch kind {
+        case .local: return try await ASRClient.load(modelId: modelId, language: language)
+        case .nemotron: return try await NemotronASRClient.load()
+        case .appleSpeech:
+            guard #available(macOS 26.0, *) else {
+                throw APILocalBenchmark.BenchmarkError.configuration("Apple streaming recognition requires macOS 26 or later.")
+            }
+            return try await AppleSpeechASRClient.load()
+        case .realRouter:
+            let recognizer = try RealRouterSpeechRecognizer(baseURL: baseURL, apiKey: apiKey, language: language)
+            try await recognizer.checkServer()
+            return recognizer
         }
     }
 
@@ -153,6 +210,15 @@ final class TranslatorEngine {
     }
 
     // MARK: - Start / stop
+
+    /// Await a finite injected audio source and every final it produced. Live
+    /// capture sources remain open until stopped; replay tools use this to
+    /// avoid mistaking a temporary gap in captions for completed inference.
+    func waitForInputCompletion() async {
+        let dispatch = eventLoopTask, worker = finalsWorkerTask
+        await dispatch?.value
+        await worker?.value
+    }
 
     func start(sourceOverride: (any AudioSource)? = nil) async {
         guard case .ready = phase else { return }
@@ -198,7 +264,18 @@ final class TranslatorEngine {
 
         activeSession = ListeningSession(id: session)
         history.beginSession(id: session)
-        let pipe = PartialPipelineUI(asr: asr, backend: backend, context: translationContext) { [weak self] src, translated, id in
+        let recognitionSnapshot = SpeechRecognitionSnapshot(acceptsUnpunctuatedEnd: asr.isStreaming)
+        let pipe = PartialPipelineUI(asr: asr, backend: backend, context: translationContext,
+                                     recognitionSnapshot: recognitionSnapshot, timing: timing,
+                                     drawPreview: { [weak self] src, translated, id in
+            await MainActor.run { [weak self] in
+                guard let self, self.listeningSession == session, self.phase == .listening else { return }
+                // In-flight tokens are display-only. Stop/failure must not
+                // persist a generated prefix or feed it into future prompts.
+                if let translated { self.streamedTranslation = (id, translated) }
+                self.captions.update(id: id, source: src, translation: translated)
+            }
+        }) { [weak self] src, translated, id in
             await MainActor.run { [weak self] in
                 guard let self, self.listeningSession == session,
                       self.phase == .listening else { return }
@@ -206,14 +283,15 @@ final class TranslatorEngine {
                     if self.displayedUtteranceID != id {
                         self.liveSource = LiveSourceText()
                     }
-                    self.partialRevision = CaptionRevision(previous: self.latestTranslationID == id ? self.translationText : "")
                     self.liveSource.update(src)
                     self.displayedUtteranceID = id
                 }
                 self.sourceText = src
                 if let translated {
-                    self.translationText = self.partialRevision.update(translated)
+                    self.translationText = translated
                     self.latestTranslationID = id
+                    self.streamedTranslation = (id, translated)
+                    self.lastTranslationError = nil
                 }
                 self.isPartial = true
                 self.captions.update(id: id, source: src,
@@ -237,7 +315,9 @@ final class TranslatorEngine {
         previousTranslation = ""
         displayedUtteranceID = nil
         latestTranslationID = nil
+        streamedTranslation = nil
         droppedUtteranceCount = 0
+        lastTranslationError = nil
         // Each listening session is a fresh conversation — stale exchanges
         // from hours ago would bias terminology and register.
         translationContext.reset()
@@ -251,6 +331,28 @@ final class TranslatorEngine {
 
         let queue = FinalUtteranceQueue()
         self.finalsQueue = queue
+        let assembly = SpeechAssemblyCoordinator(recognition: recognitionSnapshot,
+            previewAtPause: asr.partialPolicy.minimumSamples == 0, timing: timing) { [weak self] emission in
+            if let preview = emission.preview {
+                await pipe.submit(preview.audio, id: preview.id, overlapSource: preview.overlapSource)
+            } else if let final = emission.finalized {
+                self?.timing?.note("final_queued", id: final.id, samples: final.audio.count)
+                let knownSource = asr.isStreaming ? nil : final.sourceOverride
+                    ?? recognitionSnapshot.transcript(id: final.id, samples: final.audio.count)
+                await pipe.freeze(finalID: final.id, finalSource: knownSource)
+                let shed = await queue.enqueue(final.audio, id: final.id,
+                    sourceOverride: final.sourceOverride, overlapSource: final.overlapSource)
+                if shed {
+                    let droppedID = await queue.lastDroppedID
+                    await MainActor.run { [weak self] in
+                        guard let self, self.listeningSession == session else { return }
+                        self.droppedUtteranceCount += 1
+                        if let droppedID { self.captions.finish(id: droppedID) }
+                    }
+                }
+            }
+        }
+        self.speechAssembly = assembly
 
         // Dispatch loop: consumes VAD events WITHOUT blocking on inference, so
         // the event buffer can never back up into shedding. Finals are handed
@@ -264,41 +366,12 @@ final class TranslatorEngine {
                 endSilenceMs: prefEndSilenceMs
             )
 
-            var utteranceID = UUID()
             for await event in events {
-                guard let self else { break }
-                switch event {
-                case .speechStart:
-                    // Keep the last readable caption until recognition
-                    // arrives. A new utterance starts with isPartial=false,
-                    // so its first token won't wait to catch up to the length
-                    // of the previous sentence.
-                    utteranceID = UUID()
-
-                case .partial(let audio):
-                    await pipe.submit(audio, id: utteranceID)
-
-                case .final(let audio):
-                    // Freeze now (fast — just a flag) so a stale partial of
-                    // THIS utterance can't paint over the final's stream;
-                    // the worker waits for in-flight partial work before
-                    // touching the GPU.
-                    await pipe.freeze()
-                    let shed = await queue.enqueue(audio, id: utteranceID)
-                    if shed {
-                        let droppedID = await queue.lastDroppedID
-                        FileHandle.standardError.write(
-                            "[engine] shed utterance under overload\n".data(using: .utf8) ?? Data()
-                        )
-                        await MainActor.run {
-                            // Ignore a lame-duck loop from a previous session.
-                            guard self.finalsQueue === queue else { return }
-                            self.droppedUtteranceCount += 1
-                            if let droppedID { self.captions.finish(id: droppedID) }
-                        }
-                    }
-                }
+                guard self != nil, !Task.isCancelled else { break }
+                await assembly.receive(event)
             }
+            if Task.isCancelled { await assembly.cancel() }
+            else { await assembly.finish() }
             await queue.finish()
         }
 
@@ -312,6 +385,9 @@ final class TranslatorEngine {
                     audio: utterance.audio,
                     utteranceID: utterance.id,
                     queuedAt: utterance.queuedAt,
+                    sourceOverride: utterance.sourceOverride,
+                    overlapSource: utterance.overlapSource,
+                    recognition: recognitionSnapshot,
                     pipe: pipe,
                     asr: asr,
                     backend: backend,
@@ -337,13 +413,19 @@ final class TranslatorEngine {
         audio: [Float],
         utteranceID: UUID,
         queuedAt: ContinuousClock.Instant,
+        sourceOverride: String? = nil,
+        overlapSource: String? = nil,
+        recognition: SpeechRecognitionSnapshot,
         pipe: PartialPipelineUI,
-        asr: ASRClient,
+        asr: any SpeechRecognitionBackend,
         backend: any TranslationBackend,
         session: UUID
     ) async {
         let segmentStart = Date()
         let processingStart = ContinuousClock.now
+        let span = UUID()
+        timing?.note("final_start", id: utteranceID, span: span, path: "final", samples: audio.count,
+                     durationMS: PipelineTiming.ms(queuedAt))
         // The dispatch loop froze the pipe (discarding this utterance's stale
         // snapshot) at enqueue time; re-freezing here is an idempotent guard
         // against the small window where the worker's drain-time reset raced
@@ -351,13 +433,38 @@ final class TranslatorEngine {
         // which by now belongs to the next utterance. Then wait out any
         // in-flight partial ASR/translate so the final doesn't contend for
         // the GPU.
-        await pipe.freeze(discardPending: false)
+        let knownSource = asr.isStreaming ? nil : sourceOverride
+            ?? recognition.transcript(id: utteranceID, samples: audio.count)
+        await pipe.freeze(discardPending: false, finalID: utteranceID, finalSource: knownSource)
         await pipe.awaitQuiescence()
+        timing?.note("final_quiescent", id: utteranceID, span: span, path: "final",
+                     durationMS: PipelineTiming.ms(processingStart))
         guard !Task.isCancelled else { return }
 
         let asrStart = ContinuousClock.now
-        let text = await asr.transcribe(audio)
+        timing?.note("asr_start", id: utteranceID, span: span, path: "final", samples: audio.count)
+        let text: String
+        do {
+            if let sourceOverride, !asr.isStreaming { text = sourceOverride }
+            else if !asr.isStreaming, let cached = recognition.transcript(id: utteranceID, samples: audio.count) { text = cached }
+            else { text = TranscriptOverlap.strip(try await asr.transcribe(audio, id: utteranceID, final: true), previous: overlapSource) }
+        }
+        catch {
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard self.listeningSession == session else { return }
+                // Do not silently discard speech or keep uploading after an
+                // authentication/network failure. stop() saves recognized
+                // unfinished text and cancels every outstanding request.
+                self.stop()
+                self.phase = .error("Speech recognition failed: \(error.localizedDescription)")
+            }
+            return
+        }
         let asrDone = ContinuousClock.now
+        timing?.note("asr_end", id: utteranceID, span: span, path: "final", samples: audio.count,
+                     text: text, durationMS: PipelineTiming.ms(asrStart),
+                     reason: sourceOverride != nil ? "override" : recognition.transcript(id: utteranceID, samples: audio.count) == text && !asr.isStreaming ? "cached" : "inference")
         guard !Task.isCancelled else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count < 2 {
@@ -368,16 +475,15 @@ final class TranslatorEngine {
             return
         }
 
-        let targetAtStart = await MainActor.run { Preferences.shared.targetLanguage }
+        let targetAtStart = await MainActor.run { self.targetLanguage }
 
         // Commit the final ASR source text, but DO NOT clear
         // translationText — that would flash the card to an
         // empty / placeholder state for ~300ms before the LLM's
-        // first token arrives. We let the incoming stream
-        // replace the previous partial translation atomically.
-        var revision = await MainActor.run {
-            let revision = CaptionRevision(previous: self.latestTranslationID == utteranceID ? self.translationText : "")
-            guard self.listeningSession == session else { return revision }
+        // first token arrives. The completed response replaces
+        // the previous draft atomically.
+        await MainActor.run {
+            guard self.listeningSession == session else { return }
             self.sourceText = text
             self.liveSource.commit(text)
             self.utteranceCount += 1
@@ -385,25 +491,62 @@ final class TranslatorEngine {
             self.displayedUtteranceID = utteranceID
             self.captions.update(id: utteranceID, source: text, translation: nil)
             self.notePendingTranscript(id: utteranceID, source: text, translation: nil)
-            return revision
         }
 
-        var fullTranslation = ""
+        var fullTranslation = await pipe.completedTranslation(id: utteranceID, source: text) ?? ""
+        var finalContext = translationContext.snapshot()
+        let draft = await pipe.completedDraft(id: utteranceID)
+        if let draft { finalContext.append(draft) }
+        // An unchanged, confirmed sentence prefix has already been translated
+        // and read. Translate only the remaining speech instead of asking the
+        // model to paraphrase the entire utterance and replay its old pages.
+        var pendingSource = text
+        var confirmedTranslation = ""
+        if fullTranslation.isEmpty, let draft,
+           let remainder = RecognitionTextAgreement.remainder(after: draft.source, in: text, ignoresSegmentation: false) {
+            if !remainder.isEmpty {
+                pendingSource = remainder
+                confirmedTranslation = draft.translation
+            }
+        }
         var firstTokenAt: ContinuousClock.Instant?
+        let visibleBeforeRequest = await MainActor.run {
+            if self.streamedTranslation?.id == utteranceID { return self.streamedTranslation?.text ?? "" }
+            return self.latestTranslationID == utteranceID && self.lastTranslationError == nil ? self.translationText : ""
+        }
+        var display = TranslationStreamDisplay(prefix: confirmedTranslation, previousText: visibleBeforeRequest)
+        let translationStarted = ContinuousClock.now
+        let fallbackTranslation = confirmedTranslation
         do {
-            for try await chunk in backend.translateStream(text, history: translationContext.snapshot()) {
-                if firstTokenAt == nil, !chunk.isEmpty { firstTokenAt = .now }
-                fullTranslation += chunk
-                let snapshot = revision.update(fullTranslation)
-                await MainActor.run {
-                    guard self.listeningSession == session else { return }
-                    // Each chunk replaces the old partial text directly —
-                    // no empty intermediate state.
-                    self.translationText = snapshot
-                    self.latestTranslationID = utteranceID
-                    self.captions.update(id: utteranceID, source: text, translation: snapshot)
-                    self.notePendingTranscript(id: utteranceID, source: text, translation: snapshot)
+            if fullTranslation.isEmpty {
+                timing?.note("translation_start", id: utteranceID, span: span, path: "final", text: pendingSource)
+                for try await chunk in backend.translateStream(pendingSource, history: finalContext) {
+                    if firstTokenAt == nil, !chunk.isEmpty {
+                        firstTokenAt = .now
+                        timing?.note("translation_first_token", id: utteranceID, span: span, path: "final")
+                    }
+                    fullTranslation += chunk
+                    try Task.checkCancellation()
+                    guard await MainActor.run(body: {
+                        self.listeningSession == session && self.targetLanguage == targetAtStart
+                    }) else { return }
+                    if let visible = display.append(chunk, elapsedMS: PipelineTiming.ms(translationStarted)) {
+                        timing?.note("translation_preview", id: utteranceID, span: span, path: "final", text: visible)
+                        await MainActor.run {
+                            guard self.listeningSession == session, self.phase == .listening,
+                                  self.targetLanguage == targetAtStart else { return }
+                            self.streamedTranslation = (utteranceID, visible)
+                            self.captions.update(id: utteranceID, source: text, translation: visible)
+                        }
+                    }
                 }
+            }
+            guard !fullTranslation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw RealRouterError.emptyResponse
+            }
+            if !confirmedTranslation.isEmpty {
+                let separator = fullTranslation.first?.isASCII == true || confirmedTranslation.last?.isASCII == true ? " " : ""
+                fullTranslation = confirmedTranslation + separator + fullTranslation
             }
         } catch {
             // A failed stream must not commit its truncated prefix to the
@@ -411,10 +554,23 @@ final class TranslatorEngine {
             if !(error is CancellationError) {
                 await MainActor.run {
                     guard self.listeningSession == session else { return }
-                    self.translationText = "[translate error: \(error)]"
+                    self.translationText = "[translate error: \(error.localizedDescription)]"
+                    self.streamedTranslation = nil
+                    if self.llmBackend == .rapidMLX, let connection = error as? URLError,
+                       [.cannotConnectToHost, .cannotFindHost, .networkConnectionLost].contains(connection.code) {
+                        self.lastTranslationError = "Cannot reach Rapid-MLX at \(Preferences.shared.rapidMLXURL). Start the local server, then reconnect."
+                    } else {
+                        self.lastTranslationError = error.localizedDescription
+                    }
                     // Keep all recognized words available for reading even
                     // when this utterance's translation fails.
-                    self.captions.update(id: utteranceID, source: text, translation: nil, final: true)
+                    self.captions.update(id: utteranceID, source: text, translation: fallbackTranslation, final: true)
+                    self.history.append(TranscriptEntry(id: UUID(), startedAt: segmentStart, endedAt: Date(),
+                        sourceText: text, translationText: "", sourceLanguageHint: Preferences.shared.asrLanguage,
+                        targetLanguage: targetAtStart,
+                        audioSource: (self.activeAudioSourceKind ?? Preferences.shared.audioSource).rawValue,
+                        sessionId: session, isPartial: true))
+                    self.activeSession?.committed(utteranceID: utteranceID)
                 }
             }
             return
@@ -426,6 +582,8 @@ final class TranslatorEngine {
         }
 
         let finalTranslation = fullTranslation
+        timing?.note("translation_end", id: utteranceID, span: span, path: "final", text: fullTranslation,
+                     reason: firstTokenAt == nil ? "reused" : "completed")
         let finalSource = text
         if !finalTranslation.isEmpty {
             let endedAt = Date()
@@ -434,7 +592,9 @@ final class TranslatorEngine {
                 // Barge-in may have marked the card stale mid-stream; the
                 // completed final is committed content, restyle it as such.
                 self.translationText = finalTranslation
+                self.streamedTranslation = (utteranceID, finalTranslation)
                 self.latestTranslationID = utteranceID
+                self.lastTranslationError = nil
                 self.isPartial = false
                 self.previousTranslation = finalTranslation
                 self.captions.update(id: utteranceID, source: finalSource, translation: finalTranslation, final: true)
@@ -442,7 +602,7 @@ final class TranslatorEngine {
                 // the next segment keeps pronouns/terminology consistent —
                 // unless the target language changed while we streamed, in
                 // which case this pair is in the wrong language.
-                if Preferences.shared.targetLanguage == targetAtStart {
+                if self.targetLanguage == targetAtStart {
                     self.translationContext.note(source: finalSource, translation: finalTranslation)
                 }
                 let entry = TranscriptEntry(
@@ -452,7 +612,7 @@ final class TranslatorEngine {
                     sourceText: finalSource,
                     translationText: finalTranslation,
                     sourceLanguageHint: Preferences.shared.asrLanguage,
-                    targetLanguage: Preferences.shared.targetLanguage,
+                    targetLanguage: self.targetLanguage,
                     audioSource: (self.activeAudioSourceKind ?? Preferences.shared.audioSource).rawValue,
                     sessionId: session
                 )
@@ -492,6 +652,9 @@ final class TranslatorEngine {
             await partialPipe?.shutdown()
         }
         partialPipe = nil
+        let assembly = speechAssembly
+        speechAssembly = nil
+        Task { await assembly?.cancel() }
         audioSource = nil
         activeAudioSourceKind = nil
         if case .listening = phase {
@@ -529,7 +692,7 @@ final class TranslatorEngine {
     private func notePendingTranscript(id: UUID, source: String, translation: String?) {
         let prefs = Preferences.shared
         activeSession?.update(utteranceID: id, source: source, translation: translation,
-                              target: prefs.targetLanguage, sourceLanguage: prefs.asrLanguage,
+                              target: targetLanguage, sourceLanguage: prefs.asrLanguage,
                               audioSource: (activeAudioSourceKind ?? prefs.audioSource).rawValue)
     }
 
@@ -542,7 +705,7 @@ final class TranslatorEngine {
         isPartial = false
         displayedUtteranceID = nil
         latestTranslationID = nil
-        partialRevision = CaptionRevision(previous: "")
+        streamedTranslation = nil
         droppedUtteranceCount = 0
     }
 

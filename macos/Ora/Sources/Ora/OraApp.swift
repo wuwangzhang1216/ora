@@ -116,6 +116,9 @@ struct OraApp: App {
     @State private var engine: TranslatorEngine
 
     init() {
+        if CommandLine.arguments.contains("--benchmark-api-local") {
+            APILocalBenchmark.runAndExit()
+        }
         if CommandLine.arguments.contains("--rapid-mlx-smoke-test") {
             Self.runRapidMLXSmokeTestAndExit()
         }
@@ -330,17 +333,21 @@ struct MenuContent: View {
             }
         }
 
-        Menu("Quality") {
-            ForEach(TranslatorQuality.allCases, id: \.self) { q in
-                Button {
-                    guard q != prefs.quality else { return }
-                    prefs.quality = q
-                    Task { await engine.reload() }
-                } label: {
-                    if q == prefs.quality {
-                        Label(q.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(q.displayName)
+        if prefs.llmBackend == .realRouter {
+            Text("RealRouter · \(prefs.realRouterModel)")
+        } else {
+            Menu("Quality") {
+                ForEach(TranslatorQuality.allCases, id: \.self) { q in
+                    Button {
+                        guard q != prefs.quality else { return }
+                        prefs.quality = q
+                        Task { await engine.reload() }
+                    } label: {
+                        if q == prefs.quality {
+                            Label(q.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(q.displayName)
+                        }
                     }
                 }
             }

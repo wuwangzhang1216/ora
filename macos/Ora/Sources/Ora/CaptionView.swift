@@ -1,12 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Two-line, font-measured cues. The presenter owns reading time and the FIFO;
-/// the view never clips text or binds directly to the latest model paragraph.
+/// Two-line live captions measured with the rendering fonts. The presenter
+/// follows new translated speech; complete transcripts remain in history.
 struct CaptionView: View {
     @Bindable var engine: TranslatorEngine
     @Bindable private var prefs = Preferences.shared
-    @State private var isHovered: Bool = false
 
     private var translationFontSize: CGFloat { CGFloat(prefs.captionFontSize) }
     private var sourceFontSize: CGFloat { CGFloat(prefs.captionSourceFontSize) }
@@ -21,65 +20,38 @@ struct CaptionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 4 : 6) {
+        VStack(alignment: .leading, spacing: 8) {
             header
-
             captionContent
-                .id(engine.captions.visible?.id)
-                .transition(.opacity)
-                .animation(.easeOut(duration: 0.12), value: engine.captions.visible?.id)
-
-            HStack {
-                Text(engine.sessionNotice?.detail
-                     ?? (engine.captions.visible?.isCorrection == true ? "Updated wording"
-                         : engine.captions.visible?.isDraft == true ? "Live translation" : " "))
-                Spacer()
-                if let notice = engine.sessionNotice {
-                    switch notice {
-                    case .saved, .failed:
-                        Button("View history") { TranscriptHistoryWindowPresenter.shared.show() }
-                            .buttonStyle(.plain)
-                    case .saving, .empty: EmptyView()
-                    }
-                } else if engine.droppedUtteranceCount > 0 {
-                    Text("\(engine.droppedUtteranceCount) audio segments missed").foregroundStyle(.orange)
-                } else if engine.captions.queuedCount > 0 {
-                    Text("\(engine.captions.queuedCount) \(engine.captions.queuedCount == 1 ? "segment" : "segments") queued")
-                }
+            if engine.sessionNotice != nil || engine.droppedUtteranceCount > 0 || engine.lastTranslationError != nil {
+                sessionFeedback
             }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, isCompact ? 14 : 20)
-        .padding(.vertical, isCompact ? 12 : 16)
+        .padding(.vertical, isCompact ? 12 : 14)
         .frame(width: isCompact ? 420 : 600, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 // A stable dark surface keeps captions legible over white
                 // slides and bright meeting windows as well as dark video.
-                .fill(Color(red: 0.055, green: 0.063, blue: 0.078).opacity(0.94))
+                .fill(Color(red: 0.063, green: 0.075, blue: 0.09).opacity(0.97))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 10)
+        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 8)
         // Leave enough slack on all sides for the drop shadow to fade out
         // naturally — less than (shadow radius + y offset) gets clipped by
         // the hosting window and produces a visible hard-edged rectangle
         // under the card.
-        .padding(.horizontal, 32)
-        .padding(.top, 28)
-        .padding(.bottom, 40)
+        .padding(.horizontal, 28)
+        .padding(.top, 24)
+        .padding(.bottom, 32)
         .fixedSize(horizontal: false, vertical: true)
         .environment(\.colorScheme, .dark)
         .onAppear { engine.captions.reflow(typography) }
         .onChange(of: typography) { _, value in engine.captions.reflow(value) }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
         // No animation on `translationText` — LLM streaming writes dozens
         // of updates per second; animating each one makes the whole line
         // look like it's being "re-printed" every token. Tokens should
@@ -91,71 +63,81 @@ struct CaptionView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             statusIndicator
             Text(statusLabel)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.8)
-            Spacer()
-
-            // Language chip / hover controls — share the same slot so the
-            // card doesn't jiggle when the hover state flips.
-            ZStack(alignment: .trailing) {
-                Text("→ \(engine.targetLanguage)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.tertiary)
-                    .opacity(isHovered ? 0 : 1)
-                controlButtons
-                    .opacity(isHovered ? 1 : 0)
-            }
-        }
-    }
-
-    // MARK: - Control buttons (hover-revealed)
-
-    private var controlButtons: some View {
-        HStack(spacing: 4) {
+                .lineLimit(1)
+            Spacer(minLength: 12)
             ControlButton(
                 systemImage: engine.phase == .listening ? "pause.fill" : "play.fill",
                 help: engine.phase == .listening ? "End session" : "Start new session"
-            ) {
-                engine.toggle()
-            }
+            ) { engine.toggle() }
             .disabled(engine.isCaptionPreview)
-
-            ControlButton(systemImage: "gearshape", help: "Preferences") {
-                PreferencesWindowPresenter.shared.show(engine: engine)
+            Menu {
+                Toggle("Show source", isOn: Binding(
+                    get: { shouldShowSource },
+                    set: { prefs.captionDisplayMode = $0 ? .bilingual : .translationOnly }))
+                Button("Preferences…", systemImage: "slider.horizontal.3") {
+                    PreferencesWindowPresenter.shared.show(engine: engine)
+                }
+                Button("Transcript history", systemImage: "clock.arrow.circlepath") {
+                    TranscriptHistoryWindowPresenter.shared.show()
+                }
+                Divider()
+                Button("Copy visible subtitle", systemImage: "doc.on.doc") { copyCurrentTranslation() }
+                    .disabled(engine.captions.visible?.translation.display.isEmpty ?? true)
+                Button("Export current session", systemImage: "square.and.arrow.up") {
+                    TranscriptExportCoordinator.export(
+                        entries: TranscriptHistory.shared.currentSession,
+                        suggestedName: "ora-session-\(TranscriptExportCoordinator.timestamp())")
+                }
+                Divider()
+                Button("Hide window", systemImage: "xmark") { PanelManager.shared.hide() }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
-
-            ControlButton(systemImage: "clock.arrow.circlepath", help: "Transcript history") {
-                TranscriptHistoryWindowPresenter.shared.show()
-            }
-
-            ControlButton(systemImage: "doc.on.doc", help: "Copy visible subtitle") {
-                copyCurrentTranslation()
-            }
-            .disabled(engine.captions.visible?.translation.raw.isEmpty ?? true)
-
-            ControlButton(
-                systemImage: "square.and.arrow.up",
-                help: "Export current session"
-            ) {
-                TranscriptExportCoordinator.export(
-                    entries: TranscriptHistory.shared.currentSession,
-                    suggestedName: "ora-session-\(TranscriptExportCoordinator.timestamp())"
-                )
-            }
-
-            ControlButton(systemImage: "xmark", help: "Hide window") {
-                PanelManager.shared.hide()
-            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More caption options")
+            .accessibilityLabel("More caption options")
         }
     }
 
+    @ViewBuilder
+    private var sessionFeedback: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            if let notice = engine.sessionNotice {
+                Text(notice.detail)
+                Spacer(minLength: 0)
+                switch notice {
+                case .saved, .failed:
+                    Button("View history") { TranscriptHistoryWindowPresenter.shared.show() }
+                        .buttonStyle(.plain)
+                case .saving, .empty: EmptyView()
+                }
+            } else if engine.droppedUtteranceCount > 0 {
+                Text("\(engine.droppedUtteranceCount) audio segments missed").foregroundStyle(.orange)
+            } else if let error = engine.lastTranslationError {
+                Text("Translation failed · source saved").foregroundStyle(.orange).help(error)
+                Spacer(minLength: 0)
+                Button("Reconnect") { Task { await engine.reload() } }
+                    .buttonStyle(.plain)
+                    .help(error)
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+    }
+
     private func copyCurrentTranslation() {
-        guard let text = engine.captions.visible?.translation.raw, !text.isEmpty else { return }
+        guard let text = engine.captions.visible?.translation.display, !text.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -167,19 +149,23 @@ struct CaptionView: View {
     private var captionContent: some View {
         let cue = engine.captions.visible
         let translation = cue?.translation.display ?? ""
-        VStack(alignment: .leading, spacing: isCompact ? 4 : 6) {
-            if shouldShowSource {
-                Text(cue?.source.display ?? "")
-                    .font(Font(typography.sourceFont))
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: lineHeight(typography.sourceFont) * 2, alignment: .topLeading)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            if shouldShowSource, let source = cue?.source.display, !source.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(source)
+                        .font(Font(typography.sourceFont))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .help("Live recognition can be ahead of the translation.")
+                Divider().overlay(Color.white.opacity(0.04)).padding(.vertical, 2)
             }
             Text(engine.sessionNotice?.title ?? (!translation.isEmpty ? translation
+                 : engine.lastTranslationError != nil ? "Translation unavailable"
                  : cue != nil ? (cue?.isDraft == true ? "Translating…" : " ") : placeholderText))
                 .font(Font(typography.translationFont))
                 .foregroundStyle(!translation.isEmpty ? Color.primary : Color.secondary)
-                .frame(minHeight: lineHeight(typography.translationFont) * 2, alignment: .topLeading)
+                .frame(minHeight: lineHeight(typography.translationFont) * (cue != nil || engine.phase == .listening ? 2 : 1), alignment: .topLeading)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,7 +181,7 @@ struct CaptionView: View {
     private var statusIndicator: some View {
         Circle()
             .fill(statusColor)
-            .frame(width: 7, height: 7)
+            .frame(width: 6, height: 6)
     }
 
     private var statusColor: Color {
@@ -208,7 +194,7 @@ struct CaptionView: View {
             }
         }
         switch engine.phase {
-        case .listening: return .red
+        case .listening: return .mint
         case .ready: return .green
         case .loading: return .orange
         case .idle: return .gray
@@ -217,7 +203,7 @@ struct CaptionView: View {
     }
 
     private var statusLabel: String {
-        if engine.isCaptionPreview { return "Caption preview" }
+        if engine.isCaptionPreview { return "Preview" }
         if let notice = engine.sessionNotice {
             switch notice {
             case .saving: return "Saving"
@@ -230,7 +216,7 @@ struct CaptionView: View {
         case .idle: return "Idle"
         case .loading(let status, _): return status
         case .ready: return engine.captions.isDraining ? "Finishing captions" : "Ready"
-        case .listening: return engine.isPartial ? "Live · Updating" : "Listening"
+        case .listening: return "Listening"
         case .error: return "Error"
         }
     }
@@ -246,7 +232,7 @@ struct CaptionView: View {
     }
 }
 
-// MARK: - Small circular control button
+// MARK: - Persistent caption control
 
 private struct ControlButton: View {
     let systemImage: String
@@ -258,16 +244,17 @@ private struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 20, height: 20)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
                 .background(
-                    Circle()
-                        .fill(Color.white.opacity(isOver ? 0.22 : 0.12))
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.white.opacity(isOver ? 0.09 : 0))
                 )
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
         .onHover { over in
             withAnimation(.easeOut(duration: 0.12)) { isOver = over }
         }

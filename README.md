@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Real-time local speech translation for macOS.</strong><br/>
-  Everything runs on your Mac — no cloud, no API keys, no data ever leaves the device.
+  Runs locally by default — optional RealRouter API speech recognition and translation.
 </p>
 
 <p align="center">
@@ -25,8 +25,8 @@
 Ora listens to your microphone and streams live translations of what you say into a floating caption window, using on-device MLX models for both speech recognition and translation. It's designed as a small, focused menu-bar app — click once, talk, read.
 
 - 🎙 **Native real-time**: on-device voice activity detection, speech recognition, and translation, all on the Metal GPU
-- 🔒 **100% local**: no network calls after the one-time model download, no API keys, no telemetry
-- ⚡️ **Low latency**: sub-second caption updates while you're still speaking
+- 🔒 **Local by default**: offline recognition and translation after the one-time model download, no API keys or telemetry; optional RealRouter can send audio and recognized text upstream
+- ⚡️ **Live captions**: source text updates while you speak; revisable translation previews continue before sentence boundaries
 - 🪟 **Minimal UI**: menu bar icon + a single floating caption card, configurable-shortcut driven
 - 🌍 **Multilingual**: translate between Chinese, English, Japanese, Korean, French, German, Spanish, and more
 - 🎚 **Tunable**: preferences for target language, quality tier, global hotkey, VAD sensitivity, end-of-speech window
@@ -36,7 +36,7 @@ Ora listens to your microphone and streams live translations of what you say int
 <p align="center">
   <img src="docs/screenshots/caption-window.png" width="640" alt="Live caption window with Chinese source and English translation"/>
   <br/>
-  <em>Floating caption card — source text above, large translation below, live status indicator + target-language chip.</em>
+  <em>Floating caption card with recognized speech above the translation.</em>
 </p>
 
 <p align="center">
@@ -54,6 +54,14 @@ Release packages are signed with a Developer ID. Check each release's notes for 
 - Requires **macOS 15 (Sequoia) or later** and an **Apple Silicon** Mac (M1/M2/M3/M4)
 - Model weights download on first launch; download size depends on the selected quality tier
 - First launch prompts for microphone access — required for speech capture
+
+### What's new in 0.10.0
+
+- Stream readable translations during speech and refine provisional wording as more context arrives.
+- Keep the live overlay on the latest two lines, with complete utterances in history.
+- Use play/pause directly on the caption window and find secondary actions under **More**.
+- Opt into RealRouter for translation or both recognition and translation, with API keys stored in Keychain.
+- Try experimental on-device English streaming recognition with Nemotron or Apple SpeechAnalyzer (macOS 26+).
 
 ### What's new in 0.9.0
 
@@ -113,7 +121,7 @@ Use headphones to reduce acoustic echo. Meeting mode mixes the inputs without id
 1. Click the echo-ring icon in the menu bar.
 2. Choose **Start Listening** (or press ⌥Space from anywhere).
 3. Speak. The floating caption window appears automatically.
-4. Hover the caption window to reveal ⏸ / ⧉ / ✕ controls (pause, copy translation, hide).
+4. Use the always-visible play/pause button. The **More** menu contains source display, preferences, history, copy, export, and hide.
 5. Press ⌘, for Preferences — change target language, quality tier, global hotkey, caption layout, VAD room preset, and caption size.
 
 ### Keyboard shortcuts
@@ -132,7 +140,7 @@ The native macOS app includes the same daily-use tuning as the reference CLI:
 - **Caption layout**: Bilingual, Translation Only, or Compact for screen sharing
 - **Configurable hotkey**: change Start / Stop Listening from the default ⌥Space, including a legacy ⌘⇧T option
 - **Room presets**: Quiet Room, Meeting, Noisy Room, or Custom VAD settings
-- **Fast copy**: copy the current or last translation from the menu bar, or from the caption card hover controls
+- **Fast copy**: copy the current or last translation from the menu bar, or from the caption card’s **More** menu
 - **Transcript history**: export the current session or all history as TXT, SRT, JSON, or Markdown
 
 ### Live captions for meetings
@@ -155,25 +163,67 @@ text transcripts, not audio recordings. Input changes take effect at the next St
 **System Audio** still captures only the computer's playback, and **Microphone** only
 your microphone. Existing input preferences are preserved.
 
-During speech, Ora displays the recognized source immediately and streams translated
-text as the local model generates it. A separate local caption scheduler breaks
-paragraphs at sentence punctuation, suitable clause boundaries, and reading-length
-limits. Each cue fits two lines measured with the actual caption font. Long text
-continues on subsequent cues instead of being cut off with an ellipsis.
+During speech, Ora displays recognized source text immediately. Audio slices,
+translation utterances, and display pages have independent boundaries. Short VAD
+pauses are held for another 250–450 ms; recognized unfinished thoughts can wait
+up to 2400 ms. A continuation keeps the same utterance and is re-recognized together
+with the preceding audio. Conservative text rules
+avoid treating fragments such as “I don't think…” as complete thoughts. A bounded
+hold and a separate semantic audio threshold prevent indefinite waiting. The
+2-second processing slice does not force a sentence boundary or restart VAD.
+After about 8 seconds, joined speech can retire an earlier complete sentence
+confirmed by a later recognition snapshot, provided it does not rewind text
+already published. A 45-second fallback remains when no safe boundary exists. It
+carries one second of audio overlap into the next utterance to protect boundary
+words. Only that deliberately overlapped audio is deduplicated. This is a heuristic
+endpoint policy, not a trained grammatical-completeness model. Saved VAD
+preferences still control acoustic slicing.
 
-Cues use translation-first live pacing (normally 0.75–2.4 seconds per cue), shortening
-their dwell under backlog pressure (at most 1.2 seconds once another segment is
-queued). Long source text does not hold a short translation,
-and repeated wording revisions cannot indefinitely restart a page's reading clock.
-Unread text waits in order; later
-recognition and translation cannot replace a cue before its reading time finishes.
-The default Meeting endpoint waits about 300 ms of silence; explicit saved silence
-settings are preserved. Pipeline timing logs separate inference-queue wait, partial
-finalization wait, ASR time, and translation first-token time without logging speech.
-Slow partial updates (750 ms or longer) also report recognition/first-token timing and
-cancellation status, so live-path stalls can be distinguished from display waits.
-If speech outpaces reading, the display shows the number of queued segments rather
-than automatically skipping them. Starting or ending a session clears the caption
+Live translations use agreement between consecutive recognition snapshots. A
+substantial unfinished tail can be previewed without waiting for punctuation,
+including Chinese text without spaces. Small source additions are coalesced and
+provisional requests are rate-limited, while completed sentences bypass that limit.
+Readable generated text appears during the response, with brief token coalescing
+instead of an artificial typing animation. A corrected sentence boundary can
+retranslate the whole current sentence without appending its old translation.
+Comma-delimited clauses remain revisable until their full sentence is available.
+Only completed, confirmed sentences become reusable checkpoints and translation
+context; provisional output cannot block retirement of older audio windows.
+In-flight token previews are display-only and are removed if the response fails;
+Stop cannot save those truncated tokens as a translation. An exact completed
+translation can be reused when final recognition agrees.
+Finalization also reuses recognition of the exact same audio buffer instead of
+running ASR over it a second time. Stable continuations use available space on the
+current two-line caption. The live overlay follows the newest ready translation
+instead of waiting for older captions to finish their reading timers. Recognized
+source words stay visible while the next translation is pending. Recognition and
+translation inference remain serial on the shared GPU; a slow model request can
+still postpone the next recognition pass.
+If the final source only appends to confirmed sentences, their translations are
+retained and only the remainder is translated. Finalization updates unread text
+without replaying sentences the viewer has already read. History keeps the final
+source and translation.
+
+An experimental **Local (Nemotron Streaming · English)** recognition option
+uses Nemotron 3.5 CoreML on the CPU/Neural Engine with persistent streaming
+state. The first run downloads about 612 MB; this trial fixes the input hint to
+English. Choose Qwen for other input languages. The 320 ms model chunk is not
+an end-to-end caption latency claim. Translation still uses the selected LLM
+backend. Confirmed recognition can trigger translation without a second ASR
+pass, and the current unpunctuated tail can be previewed and revised before
+commit; previews never become permanent translation context.
+On macOS 26+, **Local (Apple Streaming · English)** provides a second
+experimental on-device option through SpeechAnalyzer, using system-managed
+English assets and revisable transcription results. Both streaming options
+remain opt-in; neither is assumed faster from its model's advertised chunk size.
+
+The live caption window shows the latest two measured lines. When speech outpaces
+reading, older on-screen text gives way to current speech; the complete recognized
+and translated text remains in transcript history. Late corrections from older
+utterances cannot pull the live window backwards. Shorter corrected translations
+also replace the current snapshot. This favors staying with the speaker over
+leaving every earlier caption on screen for a fixed reading allowance.
+Starting or ending a session clears the caption
 display and its unread pages. Ending saves completed transcripts and the latest
 recognized unfinished utterance locally, then shows the session duration and a
 **Session saved** receipt only after disk writes succeed. Empty sessions are labeled
@@ -229,6 +279,53 @@ uv pip install --python .venv/bin/python rapid-mlx
 ```
 
 Then choose **Rapid-MLX** in Preferences, keep the URL as `http://127.0.0.1:8000/v1`, and click **Reconnect Translator**. This is opt-in; packaged releases still work offline with MLX Swift and do not manage the Rapid-MLX process.
+
+### Optional RealRouter speech recognition and translation
+
+In **Preferences → General → Translation**, select **RealRouter API** for both
+**Speech Recognition** and **LLM Backend** to use the full API pipeline. Keep
+Speech Recognition on **Local (Qwen ASR)** for local recognition with API
+translation. Existing settings are preserved; recognition stays local until you
+select the API.
+
+Set the server URL to `http://127.0.0.1:8789` (with or without `/v1`), enter a
+translation model supported by your server, and enter your existing RealRouter
+API key. **Save & Test APIs** stores the key in macOS Keychain, stops any listening
+session, and uses a synthetic English sentence to test the selected APIs. It
+reports speech recognition time, translated first-text time, and translation
+duration without recording your microphone or uploading transcript history.
+No Codex sign-in is needed in Ora.
+
+The default translation model field is `gpt-6-luna`; availability and reasoning
+levels are checked against your server's `/v1/models`. The recognition request
+uses the compatibility label `whisper-1`, but the actual speech model is chosen
+by RealRouter's upstream service. Use **Advanced → Source Language Hint →
+Auto-detect** for mixed-language meetings, or supply a language hint if needed.
+
+With API speech recognition, Ora encodes microphone/meeting audio as in-memory
+16 kHz mono PCM WAV and uploads it to `/v1/audio/transcriptions`. Since this is
+an utterance/file endpoint, provisional recognition uses growing snapshots with
+at least one second of audio and one second of growth, no more often than every
+1.5 seconds within an utterance. The pipeline coalesces updates, cancels stale
+requests, and always transcribes the full finalized utterance. Recognition is
+not word-by-word streaming and the server supplies no word timestamps.
+
+With API translation, recognized text and up to four recent committed translation
+exchanges are sent to `/v1/responses`. In full API mode, Ora loads only its small
+local voice-activity detector; local ASR and translator models are not loaded.
+Capture, audio mixing, caption presentation, and transcript history remain local.
+An HTTP localhost URL does **not** make the upstream inference local.
+
+Changing recognition backends or switching to API translation stops the current
+session; click Start Listening again to opt into the new path. An API final
+recognition failure also stops capture and displays the error, preserving text
+already recognized in that session. Failed audio is not saved to disk for replay.
+There is no silent provider fallback. API usage, connectivity, and server limits
+apply; speed and quality need comparison with your actual upstream models and
+network. Failed or truncated API translations are not saved as completed history.
+
+HTTP is accepted only on loopback; remote servers require HTTPS. Bearer keys are
+not stored in preferences or transcript logs, and HTTP redirects are rejected.
 
 ## How it works
 
@@ -345,8 +442,34 @@ See [setup.sh](setup.sh) and [run.sh](run.sh) for the full dependency chain.
 
 ## Privacy
 
-Ora doesn't phone home. The only network traffic is the initial HuggingFace model download, after which the app runs fully offline. No telemetry, no crash reporting, no analytics. Microphone audio never leaves your machine.
+The default MLX Swift pipeline works offline after its initial HuggingFace model
+download. Ora has no telemetry, crash reporting, or analytics. The optional
+RealRouter translation backend sends recognized text and recent context to your
+server and its upstream provider. Selecting RealRouter speech recognition also
+uploads microphone/system audio segments to the transcription service. In local
+recognition mode, audio remains on your Mac. API keys are stored in macOS Keychain. Keep MLX Swift selected
+for fully local speech processing and translation.
 
 ## License
 
 MIT.
+
+### Multi-scenario replay validation
+
+The benchmark runner records each input reference, actual recognition, translation,
+and caption timings. It distinguishes original human recordings, modified human
+recordings, and synthetic controls.
+
+```bash
+python3 tools/benchmark_multiscenario.py benchmark-results/my-replay
+# From a signed bundle with its saved API configuration:
+# ora --benchmark-api-local --mode hybrid --manifest FILE --output FILE --pipeline
+python3 tools/benchmark_multiscenario.py benchmark-results/my-replay --summarize RESULTS.jsonl
+```
+
+The suite includes public AMI, LibriSpeech, AISHELL, ASCEND, and MINDS-14 clips,
+noise/echo/volume/speed changes, overlapping voices, a roughly three-minute passage,
+and nested sentence controls lasting 38 and 69 seconds. The runner waits for all inference and unread cues;
+long cases declare their post-audio drain budgets rather than silently ending early.
+These are file replays through real models and the caption scheduler, not live Zoom
+calls or microphone/speaker capture acceptance tests.

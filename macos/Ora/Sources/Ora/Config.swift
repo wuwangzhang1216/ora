@@ -16,7 +16,11 @@ enum Config {
     static let speechEndMs = 300                  // finalize brief meeting pauses without waiting half a second
     static let preRollMs = 200                    // audio kept before speech start
     static let minUtteranceMs = 300               // drop anything shorter
-    static let maxUtteranceS: Double = 15         // safety cap for run-on speech
+    static let maxUtteranceS: Double = 2          // check continuous speech for a confirmed boundary frequently
+    // Acoustic snapshots can end at 15s without ending a sentence. Keep a
+    // separately bounded semantic window across those slices.
+    static let maxSemanticUtteranceS: Double = 45
+    static let preferredRecognitionWindowS: Double = 8
 
     static let partialIntervalS: Double = 0.4     // source-first updates; inference coalesces excess snapshots
     static let partialMinGrowthS: Double = 0.3    // skip partial unless buffer grew this much
@@ -35,6 +39,8 @@ enum Config {
 
     static let rapidMLXURL = "http://127.0.0.1:8000/v1"
     static let rapidMLXModel = "default"
+    static let realRouterURL = "http://127.0.0.1:8789"
+    static let realRouterModel = "gpt-6-luna"
 }
 
 enum AudioSourceKind: String, CaseIterable {
@@ -87,11 +93,13 @@ enum CaptionDisplayMode: String, CaseIterable {
 enum LLMBackendKind: String, CaseIterable {
     case mlxSwift
     case rapidMLX
+    case realRouter
 
     var displayName: String {
         switch self {
         case .mlxSwift: return "MLX Swift"
         case .rapidMLX: return "Rapid-MLX"
+        case .realRouter: return "RealRouter API"
         }
     }
 
@@ -101,6 +109,34 @@ enum LLMBackendKind: String, CaseIterable {
             return "Runs the translator inside Ora. Best for the packaged app and offline use."
         case .rapidMLX:
             return "Connects to a local Rapid-MLX OpenAI-compatible server for lower-latency experiments."
+        case .realRouter:
+            return "Sends recognized text and recent context to RealRouter and its upstream model for translation. Audio sharing depends on Speech Recognition above. Requires a RealRouter API key; no Codex login in Ora. API usage limits apply."
+        }
+    }
+}
+
+enum RecognitionBackendKind: String, CaseIterable {
+    case local
+    case nemotron
+    case appleSpeech
+    case realRouter
+
+    var displayName: String {
+        switch self {
+        case .local: return "Local (Qwen ASR)"
+        case .nemotron: return "Local (Nemotron Streaming · English)"
+        case .appleSpeech: return "Local (Apple Streaming · English)"
+        case .realRouter: return "RealRouter API"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .local: return "Recognizes speech on this Mac. Audio is not uploaded."
+        case .nemotron: return "Experimental Nemotron 3.5 streaming recognition, currently tested with English input. Runs on this Mac using the Neural Engine. Downloads a ~612 MB model on first use. Audio is not uploaded."
+        case .appleSpeech: return "Experimental English recognition using Apple's on-device SpeechAnalyzer. Requires macOS 26 or later. Language assets are managed by macOS. Audio is not uploaded."
+        case .realRouter:
+            return "Uploads microphone or meeting audio segments to RealRouter and its upstream service. Captions update after each transcription request, rather than word by word. The server chooses the recognition model."
         }
     }
 }

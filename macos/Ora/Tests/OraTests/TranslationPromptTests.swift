@@ -2,6 +2,14 @@ import XCTest
 @testable import Ora
 
 final class TranslationPromptTests: XCTestCase {
+    func testChineseTargetDoesNotInviteOppositeLanguageForMixedSpeech() {
+        let speech = "我的专业是 ISM, Information Systems Management。"
+        let messages = buildTranslationMessages(targetLanguage: "Chinese", text: speech)
+        XCTAssertTrue(messages.first?.content.contains("Required output language: Chinese") == true)
+        XCTAssertEqual(messages.last?.content, speech)
+        XCTAssertFalse(buildTranslationMessages(targetLanguage: "English", text: speech).first?.content.contains("Required output language: Chinese") == true)
+        XCTAssertFalse(buildTranslationMessages(targetLanguage: "Chinese", text: "Please assist.").first?.content.contains("Required output language: Chinese") == true)
+    }
     func testUtteranceHasNoSyntheticSourceLabel() {
         let messages = buildTranslationMessages(targetLanguage: "Chinese", text: "This is a fork.")
         XCTAssertEqual(messages.map(\.role), ["system", "user"])

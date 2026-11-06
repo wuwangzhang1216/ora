@@ -14,7 +14,8 @@ let package = Package(
         .executable(name: "ora", targets: ["Ora"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/soniqo/speech-swift", from: "0.0.9"),
+        // Pin the cache-aware Nemotron streaming runtime used by the local trial.
+        .package(url: "https://github.com/soniqo/speech-swift", revision: "9ce78eaec038b4dc8b519a8b01ecb4059549cfec"),
         // Pinned to a stable tag: this repo's main moves fast and the app's
         // LLM path (ChatSession, loadModelContainer) has broken on main
         // drift before. 3.31.4 also brings ChatSession-level speculative
@@ -34,6 +35,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SpeechVAD", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
+                .product(name: "NemotronStreamingASR", package: "speech-swift"),
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "HFAPI", package: "swift-hf-api"),

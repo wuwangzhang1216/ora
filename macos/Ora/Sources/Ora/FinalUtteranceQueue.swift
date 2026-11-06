@@ -3,7 +3,16 @@ import Foundation
 struct CapturedUtterance: Sendable {
     let id: UUID
     let audio: [Float]
+    let sourceOverride: String?
+    let overlapSource: String?
     let queuedAt = ContinuousClock.now
+
+    init(id: UUID, audio: [Float], sourceOverride: String? = nil, overlapSource: String? = nil) {
+        self.id = id
+        self.audio = audio
+        self.sourceOverride = sourceOverride
+        self.overlapSource = overlapSource
+    }
 }
 
 /// FIFO hand-off between the (fast, never-blocking) VAD dispatch loop and the
@@ -28,9 +37,9 @@ actor FinalUtteranceQueue {
     /// Returns true when this enqueue shed the oldest queued utterance, so the
     /// caller can surface "captions fell behind" without a second actor hop.
     @discardableResult
-    func enqueue(_ audio: [Float], id: UUID = UUID()) -> Bool {
+    func enqueue(_ audio: [Float], id: UUID = UUID(), sourceOverride: String? = nil, overlapSource: String? = nil) -> Bool {
         guard !finished else { return false }
-        let utterance = CapturedUtterance(id: id, audio: audio)
+        let utterance = CapturedUtterance(id: id, audio: audio, sourceOverride: sourceOverride, overlapSource: overlapSource)
         if let waiter {
             self.waiter = nil
             waiter.resume(returning: utterance)

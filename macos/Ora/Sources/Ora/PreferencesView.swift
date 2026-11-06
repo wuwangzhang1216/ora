@@ -26,6 +26,9 @@ struct PreferencesView: View {
 
     @State private var showClearConfirm = false
     @State private var clearError: String?
+    @State private var realRouterKey = ""
+    @State private var realRouterStatus: String?
+    @State private var testingRealRouter = false
 
     var body: some View {
         TabView {
@@ -109,12 +112,28 @@ struct PreferencesView: View {
                 engine.applyTargetLanguageChange()
             }
 
+            Picker("Speech Recognition", selection: $prefs.recognitionBackend) {
+                ForEach(RecognitionBackendKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .onChange(of: prefs.recognitionBackend) { _, _ in
+                engine.stop()
+                Task { await engine.reload() }
+            }
+            Text(prefs.recognitionBackend.helpText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Picker("LLM Backend", selection: $prefs.llmBackend) {
                 ForEach(LLMBackendKind.allCases, id: \.self) { backend in
                     Text(backend.displayName).tag(backend)
                 }
             }
             .onChange(of: prefs.llmBackend) { _, _ in
+                // Switching to an upstream translator requires a fresh Start;
+                // changing this setting must not upload an ongoing local call.
+                if prefs.llmBackend == .realRouter { engine.stop() }
                 Task { await engine.reload() }
             }
             Text(prefs.llmBackend.helpText)
@@ -130,7 +149,7 @@ struct PreferencesView: View {
                 .onChange(of: prefs.quality) { _, _ in
                     Task { await engine.reload() }
                 }
-            } else {
+            } else if prefs.llmBackend == .rapidMLX {
                 TextField("Rapid-MLX URL", text: $prefs.rapidMLXURL)
                     .textFieldStyle(.roundedBorder)
                 TextField("Model", text: $prefs.rapidMLXModel)
@@ -139,11 +158,100 @@ struct PreferencesView: View {
                     Button("Reconnect Translator") {
                         Task { await engine.reload() }
                     }
+                    switch engine.phase {
+                    case .ready, .listening:
+                        Label("Connected", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    case .loading:
+                        Text("Preparing…").foregroundStyle(.secondary)
+                    case .error(let message):
+                        Text("Not ready").foregroundStyle(.red).help(message)
+                    case .idle:
+                        Text("Not connected").foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
                 Text("Start Rapid-MLX separately, then reconnect. Example: rapid-mlx serve qwen3.5-4b --served-model-name default --port 8000 --no-thinking")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if prefs.llmBackend == .realRouter || prefs.recognitionBackend == .realRouter {
+                realRouterSettings
+            }
+        }
+    }
+
+    private var realRouterSettings: some View {
+        Group {
+            TextField("Server URL", text: $prefs.realRouterURL)
+                .textFieldStyle(.roundedBorder)
+                .disabled(testingRealRouter)
+            if prefs.llmBackend == .realRouter {
+                TextField("Translation Model", text: $prefs.realRouterModel)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(testingRealRouter)
+            }
+            SecureField("API Key (blank to reuse saved key)", text: $realRouterKey)
+                .textFieldStyle(.roundedBorder)
+                .disabled(testingRealRouter)
+            Text("Keys are saved in macOS Keychain. Test stops listening and uses a synthetic English speech sample for API recognition, then tests API translation if enabled. It never records your microphone or uploads your history.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button(testingRealRouter ? "Testing…" : "Save & Test APIs") {
+                testRealRouter()
+            }
+            .disabled(testingRealRouter)
+            if let realRouterStatus {
+                Text(realRouterStatus)
+                    .font(.caption)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func testRealRouter() {
+        engine.stop()
+        testingRealRouter = true
+        realRouterStatus = nil
+        let url = prefs.realRouterURL, model = prefs.realRouterModel, target = prefs.targetLanguage
+        let testSpeech = prefs.recognitionBackend == .realRouter
+        let testTranslation = prefs.llmBackend == .realRouter
+        Task { @MainActor in
+            defer { testingRealRouter = false }
+            do {
+                if !realRouterKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try RealRouterCredentials.save(realRouterKey)
+                    realRouterKey = ""
+                }
+                let key = try RealRouterCredentials.load()
+                let translator = testTranslation ? try await RealRouterTranslator.load(
+                    baseURL: url, model: model, apiKey: key, targetLanguage: target
+                ) : nil
+                var source = RealRouterSpeechProbe.sentence
+                var report: [String] = []
+                if testSpeech {
+                    let audio = try await RealRouterSpeechProbe.audio()
+                    let recognizer = try RealRouterSpeechRecognizer(baseURL: url, apiKey: key, language: "en")
+                    let start = Date()
+                    source = try await recognizer.transcribe(audio)
+                    guard !source.isEmpty else { throw RealRouterError.invalidTranscription }
+                    report.append(String(format: "Speech API %.2fs · %@", Date().timeIntervalSince(start), source))
+                }
+                if let translator {
+                    let start = Date()
+                    var firstToken: TimeInterval?
+                    var result = ""
+                    for try await token in translator.translateStream(source, history: []) {
+                        if firstToken == nil, !token.isEmpty { firstToken = Date().timeIntervalSince(start) }
+                        result += token
+                    }
+                    report.append(String(format: "Translation first text %.2fs · total %.2fs\n%@",
+                        firstToken ?? 0, Date().timeIntervalSince(start), result))
+                }
+                realRouterStatus = "Connected\n" + report.joined(separator: "\n")
+                if prefs.llmBackend == .realRouter || prefs.recognitionBackend == .realRouter { await engine.reload() }
+            } catch {
+                realRouterStatus = error.localizedDescription
             }
         }
     }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "d2146e2ecbc92b402f55a7020b62f54d27126724fb33625fb2834b3319406afe",
+  "originHash" : "478a5f344b087913c3d319e6aa8fd7fdeae703510c98bc9a363fc9a5f4c079db",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -69,8 +69,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/soniqo/speech-swift",
       "state" : {
-        "revision" : "03920e17671fc79d59da1573923958304e233c42",
-        "version" : "0.0.9"
+        "revision" : "9ce78eaec038b4dc8b519a8b01ecb4059549cfec"
       }
     },
     {
@@ -290,6 +289,15 @@
       }
     },
     {
+      "identity" : "swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/modelcontextprotocol/swift-sdk.git",
+      "state" : {
+        "revision" : "a0ae212ebf6eab5f754c3129608bc5557637e605",
+        "version" : "0.12.1"
+      }
+    },
+    {
       "identity" : "swift-service-context",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-service-context.git",
@@ -330,8 +338,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
-        "version" : "1.6.4"
+        "revision" : "869129b7bf4ecc57b97d0193ad29690ca2134750",
+        "version" : "1.8.1"
       }
     },
     {
@@ -359,6 +367,24 @@
       "state" : {
         "revision" : "d6ace41073825e04fc7a8441ab4613afcf7fd32f",
         "version" : "0.1.1"
+      }
+    },
+    {
+      "identity" : "whisperkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/argmaxinc/WhisperKit",
+      "state" : {
+        "revision" : "1bbc57cb7fe6410248a685b1c5a3c6d56adc2ed4",
+        "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "xgrammar",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mlc-ai/xgrammar",
+      "state" : {
+        "revision" : "82505d0d987c36a4209fb3d8571cf6b0f28b5acd",
+        "version" : "0.2.7"
       }
     },
     {

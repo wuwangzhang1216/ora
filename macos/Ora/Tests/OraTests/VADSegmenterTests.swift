@@ -5,6 +5,76 @@ import XCTest
 /// CoreML weights involved. This is the logic that regressed in the 0.6.2
 /// long-session freeze; keep it covered.
 final class VADSegmenterTests: XCTestCase {
+    func testShortSpokenTailAfterAProcessingSliceIsNotDropped() async {
+        let sliceFrames = Int(Config.maxUtteranceS * 1_000 / Double(Config.vadFrameMs))
+        let spokenFrames = sliceFrames + 5
+        let samples = [Float](repeating: 1, count: spokenFrames * Config.vadFrameSamples)
+            + [Float](repeating: 0, count: 20 * Config.vadFrameSamples)
+        let segmenter = VADSegmenter(probe: { frame in frame.contains(1) ? 0.9 : 0.1 })
+        let audio = AsyncStream<[Float]> { continuation in
+            continuation.yield(samples); continuation.finish()
+        }
+        var finals: [[Float]] = []
+        for await event in segmenter.events(from: audio) {
+            if case .final(let audio) = event { finals.append(audio) }
+        }
+        XCTAssertEqual(finals.count, 2)
+        XCTAssertEqual(finals.flatMap { $0 }.filter { $0 == 1 }.count, spokenFrames * Config.vadFrameSamples,
+                       "a last word shorter than 300 ms still belongs to the already-started utterance")
+    }
+
+    func testSilenceAfterAnExactSliceStillSignalsEndOfSpeech() async {
+        let sliceFrames = Int(Config.maxUtteranceS * 1_000 / Double(Config.vadFrameMs))
+        let segmenter = VADSegmenter(probe: { frame in frame.contains(1) ? 0.9 : 0.1 })
+        let audio = AsyncStream<[Float]> { continuation in
+            continuation.yield([Float](repeating: 1, count: sliceFrames * Config.vadFrameSamples))
+            continuation.yield([Float](repeating: 0, count: 20 * Config.vadFrameSamples))
+            continuation.finish()
+        }
+        var finals = 0
+        for await event in segmenter.events(from: audio) {
+            if case .final = event { finals += 1 }
+        }
+        XCTAssertEqual(finals, 2, "the assembly must learn that continuous speech ended, even without a new speech chunk")
+    }
+    func testContinuousProcessingSlicesPreserveEveryAudioSampleAndVADState() async {
+        final class Resets: @unchecked Sendable { var count = 0 }
+        let resets = Resets()
+        let segmenter = VADSegmenter(probe: { _ in 0.9 }, resetState: { resets.count += 1 })
+        let sliceFrames = Int(Config.maxUtteranceS * 1_000 / Double(Config.vadFrameMs))
+        let frames = sliceFrames * 2 + 20
+        let samples = (0..<frames).flatMap { index in [Float](repeating: Float(index), count: Config.vadFrameSamples) }
+        let audio = AsyncStream<[Float]> { continuation in
+            for offset in stride(from: 0, to: samples.count, by: Config.vadFrameSamples) {
+                continuation.yield(Array(samples[offset..<offset + Config.vadFrameSamples]))
+            }
+            continuation.finish()
+        }
+        var captured: [Float] = []
+        for await event in segmenter.events(from: audio) {
+            if case .final(let audio) = event { captured += audio }
+        }
+        XCTAssertEqual(captured, samples, "processing slices cannot skip the next chunk's first words or repeat audio")
+        XCTAssertEqual(resets.count, 1, "continuous slicing must not repeatedly reset the speech detector")
+    }
+    func testNewFiniteStreamsResetRecurrentState() async {
+        final class Resets: @unchecked Sendable { var count = 0 }
+        let resets = Resets()
+        let segmenter = VADSegmenter(probe: { _ in 0.9 }, resetState: { resets.count += 1 })
+        for _ in 0..<2 {
+            let audio = AsyncStream<[Float]> { continuation in
+                continuation.yield([Float](repeating: 0.1, count: 20 * Config.vadFrameSamples))
+                continuation.finish()
+            }
+            for await _ in segmenter.events(from: audio) {}
+        }
+        XCTAssertEqual(resets.count, 2, "speech ending at EOF must not contaminate the next session's VAD")
+    }
+    func testEndOfStreamPreservesSpeechWithoutTrailingSilence() async {
+        let events = await run(probs: [Float](repeating: 0.9, count: 20))
+        let finals = events.filter { if case .final = $0 { return true }; return false }
+        XCTAssertEqual(finals.count, 1)
+    }
     func testMeetingDefaultEndsSentenceDuringBriefConversationalPause() async {
         let probs = [Float](repeating: 0.9, count: 20)
             + [Float](repeating: 0.1, count: 10) // 320 ms pause

@@ -1,22 +1,5 @@
 import Foundation
 
-/// Keeps an existing readable caption while a replacement stream catches up.
-/// An updated translation may change word order, so never force an incorrect
-/// prefix to stay forever. Shorter corrections apply once, at completion.
-struct CaptionRevision {
-    private let previous: String
-    private var caughtUp = false
-
-    init(previous: String) { self.previous = previous }
-
-    mutating func update(_ candidate: String) -> String {
-        guard !candidate.isEmpty else { return previous }
-        if !caughtUp && candidate.count < previous.count { return previous }
-        caughtUp = true
-        return candidate
-    }
-}
-
 /// Agreement between consecutive ASR snapshots is presented at full contrast;
 /// the revisable suffix is dimmed. Agreement is recomputed, not permanently
 /// locked: the recognizer can still correct names and incomplete words.

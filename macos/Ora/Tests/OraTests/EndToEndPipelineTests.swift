@@ -112,7 +112,7 @@ final class EndToEndPipelineTests: XCTestCase {
                 XCTAssertFalse(seenCues.contains(cue.id), "cannot return to a previous cue")
                 seenCues.insert(cue.id)
                 let text = cue.source.display
-                if text.count > 12, !cue.source.raw.isEmpty {
+                if text.count > 12, !cue.source.raw.isEmpty, !cue.isCorrection {
                     XCTAssertFalse(sourcePages[cue.utteranceID, default: []].contains(text), "cannot replay a read source page: \(text)")
                     sourcePages[cue.utteranceID, default: []].insert(text)
                 }
@@ -331,7 +331,8 @@ final class EndToEndPipelineTests: XCTestCase {
         }
         let timeline = Timeline()
         let sourceReady = expectation(description: "real ASR displayed")
-        let firstToken = expectation(description: "real translation streaming")
+        sourceReady.assertForOverFulfill = false
+        let firstToken = expectation(description: "stable real translation")
         let pipe = PartialPipeline(asr: asr, backend: translator) { source, translation, _ in
             await timeline.append(source, translation)
             if translation == nil { sourceReady.fulfill() }
@@ -340,13 +341,19 @@ final class EndToEndPipelineTests: XCTestCase {
             if translation != nil, events.filter({ $0.2 != nil }).count == 1 { firstToken.fulfill() }
         }
         await pipe.start()
-        await pipe.submit(samples)
-        await fulfillment(of: [sourceReady, firstToken], timeout: 90)
+        let liveID = UUID()
+        await pipe.submit(samples, id: liveID)
+        await fulfillment(of: [sourceReady], timeout: 90)
+        await pipe.awaitQuiescence()
+        // A later snapshot confirms source agreement. The same completed
+        // translation is reused instead of displaying raw generated tokens.
+        await pipe.submit(samples + [Float](repeating: 0, count: 1600), id: liveID)
+        await fulfillment(of: [firstToken], timeout: 90)
         await pipe.awaitQuiescence()
         let events = await timeline.events
         XCTAssertNil(events.first?.2)
         let chunks = events.compactMap { $0.2 }
-        XCTAssertGreaterThan(chunks.count, 1, "must display intermediate translated chunks")
+        XCTAssertGreaterThanOrEqual(chunks.count, 1, "must display a stable completed clause")
         XCTAssertTrue(chunks.last?.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) } == true)
         XCTAssertTrue(events.first?.1.lowercased().contains("meeting") == true)
         // Run the actual streamed model output through the presentation

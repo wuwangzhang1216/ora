@@ -5,7 +5,7 @@ import SpeechVAD
 enum VADEvent {
     case speechStart        // VAD just triggered — new utterance is starting
     case partial([Float])   // rolling snapshot of the current utterance (every ~800ms)
-    case final([Float])     // end-of-speech; full utterance audio
+    case final([Float])     // processing slice / endpoint; empty closes an already emitted slice
 }
 
 /// Frame-level Silero VAD endpointing. Consumes an AsyncStream of mic audio chunks
@@ -47,6 +47,9 @@ final class VADSegmenter: @unchecked Sendable {
         // long session accumulate a minutes-deep backlog (freeze + repetition).
         AsyncStream(bufferingPolicy: .bufferingNewest(Config.maxPendingVADEvents)) { continuation in
             let task = Task { [probe, resetVADState] in
+                // A new listening/replay session must not inherit recurrent
+                // state from speech stopped without trailing silence.
+                resetVADState()
                 let frameSize = Config.vadFrameSamples
                 let preRollFrames = max(1, Config.preRollMs / Config.vadFrameMs)
                 let endSilenceFrames = max(1, endSilenceMs / Config.vadFrameMs)
@@ -58,6 +61,7 @@ final class VADSegmenter: @unchecked Sendable {
                 var preRoll: [[Float]] = []
                 var voiced: [[Float]] = []       // list of frame arrays
                 var triggered = false
+                var hasPriorSlice = false
                 var voicedRun = 0
                 var silenceRun = 0
                 var lastPartialTime = Date.distantPast
@@ -131,19 +135,36 @@ final class VADSegmenter: @unchecked Sendable {
                                 // guard dead code: noise blips produced
                                 // spurious finals (and hallucinated ASR).
                                 let speechFrames = voiced.count - silenceRun
-                                resetVADState()
-                                if speechFrames >= minFrames {
-                                    continuation.yield(.final(flatten(voiced)))
+                                let continues = endByLength && !endBySilence
+                                if !continues { resetVADState() }
+                                if speechFrames >= minFrames || hasPriorSlice {
+                                    // A short last word still belongs to the
+                                    // speech emitted in prior slices. Pure
+                                    // silence only signals its endpoint.
+                                    continuation.yield(.final(speechFrames > 0 ? flatten(voiced) : []))
                                 }
-                                triggered = false
+                                triggered = continues
+                                hasPriorSlice = continues
                                 voiced.removeAll()
                                 voicedRun = 0
-                                silenceRun = 0
+                                if !continues { silenceRun = 0 }
                                 lastPartialFrames = 0
                                 preRoll.removeAll()
+                                if continues {
+                                    // A processing slice is not a new voice
+                                    // onset. Preserve VAD state and every next
+                                    // sample, without another trigger delay.
+                                    lastPartialTime = Date()
+                                    continuation.yield(.speechStart)
+                                }
                             }
                         }
                     }
+                }
+                // Finite replays / a naturally ended audio source may stop
+                // without trailing silence. Preserve the last spoken words.
+                if !Task.isCancelled, triggered, voiced.count - silenceRun >= minFrames || hasPriorSlice {
+                    continuation.yield(.final(voiced.count - silenceRun > 0 ? flatten(voiced) : []))
                 }
                 continuation.finish()
             }

@@ -6,9 +6,15 @@ import Observation
 @MainActor
 @Observable
 final class CaptionPresenter {
-    private(set) var scheduler = CaptionScheduler()
+    private(set) var scheduler: CaptionScheduler = {
+        var value = CaptionScheduler()
+        value.followsLiveSpeech = true
+        return value
+    }()
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private let epoch = ContinuousClock.now
+    /// Opt-in replay probe; unset in normal use and never logs live speech.
+    @ObservationIgnored var onDelivery: ((UUID, String, String?, Bool) -> Void)?
 
     nonisolated init() {}
 
@@ -22,6 +28,7 @@ final class CaptionPresenter {
     }
 
     func update(id: UUID, source: String, translation: String?, final: Bool = false) {
+        onDelivery?(id, source, translation, final)
         scheduler.update(id: id, source: source, translation: translation, final: final, now: now)
         schedule()
     }
@@ -36,6 +43,7 @@ final class CaptionPresenter {
         timer = nil
         let typography = scheduler.typography
         scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
         scheduler.typography = typography
     }
 

@@ -4,6 +4,167 @@ import XCTest
 @testable import Ora
 
 final class CaptionSchedulerTests: XCTestCase {
+    func testLiveOverlayImmediatelyShowsNewestReadyUtterance() {
+        var scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
+        let first = UUID(), next = UUID()
+        scheduler.update(id: first, source: "first", translation: "上一段还没有到阅读时限。", final: true, now: 0)
+        scheduler.update(id: next, source: "next", translation: "现在正在说的新内容。", final: false, now: 0.1)
+        XCTAssertEqual(scheduler.visible?.utteranceID, next)
+        XCTAssertEqual(scheduler.queuedUtteranceCount, 0)
+        scheduler.update(id: first, source: "late old final", translation: "旧内容最终修正。", final: true, now: 0.2)
+        XCTAssertEqual(scheduler.visible?.utteranceID, next, "late finals cannot pull the live overlay backwards")
+    }
+
+    func testLiveOverlayBoundsOneLongUtteranceToLatestWindow() {
+        var scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
+        scheduler.typography.width = 180
+        let id = UUID(), old = String(repeating: "这是一段较早的内容。", count: 20)
+        let full = old + "这是现在说的重点。"
+        scheduler.update(id: id, source: "", translation: full, final: false, now: 0)
+        XCTAssertTrue(scheduler.visible!.translation.display.replacingOccurrences(of: "\n", with: "").contains("现在说的重点"))
+        XCTAssertLessThanOrEqual(scheduler.visible!.translation.display.split(separator: "\n").count, 2)
+        XCTAssertGreaterThan(scheduler.catchUpCount, 0)
+    }
+
+    func testLiveOverlayAcceptsShorterCorrectedSnapshotAfterCatchUp() {
+        var scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
+        let id = UUID()
+        scheduler.update(id: id, source: "", translation: String(repeating: "较早的长段内容。", count: 30), final: false, now: 0)
+        scheduler.update(id: id, source: "", translation: "这是修正后的当前译文。", final: false, now: 0.1)
+        XCTAssertEqual(scheduler.visible?.translation.raw, "这是修正后的当前译文。")
+    }
+
+    func testLiveSourceContinuesAfterACompletedSentenceBeforeNextTranslation() {
+        var scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
+        let id = UUID()
+        scheduler.update(id: id, source: "Hello world.", translation: "你好。", final: false, now: 0)
+        scheduler.update(id: id, source: "Hello world. We are still speaking", translation: nil, final: false, now: 0.1)
+        XCTAssertTrue(scheduler.visible!.source.display.contains("still speaking"),
+            "recognized new words must be visible even before their translation completes")
+    }
+
+    func testLiveSourceFromNextUtteranceAppearsWhileItsTranslationIsPending() {
+        var scheduler = CaptionScheduler()
+        scheduler.followsLiveSpeech = true
+        let first = UUID(), next = UUID()
+        scheduler.update(id: first, source: "Earlier speech.", translation: "上一句译文。", final: true, now: 0)
+        scheduler.update(id: next, source: "New speech is being captured", translation: nil, final: false, now: 0.1)
+        XCTAssertTrue(scheduler.visible!.source.display.contains("New speech"))
+        XCTAssertTrue(scheduler.visible!.translation.display.contains("上一句译文"))
+        scheduler.advance(now: 2)
+        scheduler.update(id: next, source: "New speech is being captured", translation: "新的讲话正在被捕获。", final: false, now: 2.1)
+        XCTAssertEqual(scheduler.visible?.utteranceID, next)
+    }
+
+    func testTranslationRollsOneLineAndKeepsPreviousLineReadable() {
+        var scheduler = CaptionScheduler()
+        scheduler.typography.width = 180
+        let full = String(repeating: "我们需要及时看到下一段字幕并且保留上一行作为阅读上下文。", count: 3)
+        scheduler.update(id: UUID(), source: "", translation: full, final: true, now: 0)
+        let first = scheduler.current!.translation
+        XCTAssertEqual(first.display.split(separator: "\n").count, 1)
+        XCTAssertLessThan(scheduler.nextDeadline!, 3, "one readable line should advance before a full two-line page")
+        let advancedAt = scheduler.nextDeadline! + 0.01
+        scheduler.advance(now: advancedAt)
+        let next = scheduler.current!.translation
+        scheduler.update(id: scheduler.current!.utteranceID, source: "", translation: full,
+                         final: true, now: advancedAt + 0.1)
+        XCTAssertLessThanOrEqual(scheduler.current!.translation.display.split(separator: "\n").count, 2,
+            "refreshing a held line cannot duplicate its context")
+        XCTAssertTrue(next.display.hasPrefix(first.display + "\n"), "keep the previous line on screen while introducing the next")
+        XCTAssertTrue(next.display.hasSuffix(next.raw.trimmingCharacters(in: .whitespacesAndNewlines)))
+        var consumed = first.raw + next.raw
+        while scheduler.isDraining {
+            scheduler.advance(now: scheduler.nextDeadline! + 0.01)
+            if let cue = scheduler.current { consumed += cue.translation.raw }
+        }
+        XCTAssertEqual(consumed, full, "rolling must neither drop nor replay source text")
+    }
+
+    func testContinuationPagesPackShortSentencesWithoutAddingOneMinimumDwellEach() {
+        var scheduler = CaptionScheduler()
+        let id = UUID(), next = UUID()
+        let full = "这段字幕需要完整阅读。坦诚。我向来如此。"
+        scheduler.update(id: id, source: "", translation: full, final: true, now: 0)
+        XCTAssertEqual(scheduler.current?.translation.raw, "这段字幕需要完整阅读。")
+        scheduler.update(id: next, source: "", translation: "接下来一句。", final: true, now: 0.1)
+        let now = scheduler.nextDeadline! + 0.01
+        scheduler.advance(now: now)
+        XCTAssertEqual(scheduler.current?.translation.raw, "坦诚。我向来如此。",
+            "two tiny sentences that fit together must not consume separate 1.2s pages")
+        let allowance = max(1.2, CaptionPaginator.readingUnits("坦诚。我向来如此。") + 0.35)
+        XCTAssertGreaterThanOrEqual(scheduler.nextDeadline!, now + allowance)
+        scheduler.advance(now: scheduler.nextDeadline! + 0.01)
+        XCTAssertEqual(scheduler.current?.utteranceID, next)
+    }
+    func testOriginalLanguageTailCannotBlockTheNextReadyTranslation() {
+        var scheduler = CaptionScheduler()
+        let first = UUID(), next = UUID()
+        scheduler.update(id: first, source: String(repeating: "verbose original words ", count: 20),
+                         translation: "上一句译文。", final: true, now: 0)
+        scheduler.advance(now: scheduler.nextDeadline! + 0.01)
+        XCTAssertEqual(scheduler.current?.utteranceID, first)
+        XCTAssertEqual(scheduler.current?.translation.raw, "")
+        scheduler.update(id: next, source: "Next.", translation: "新一句已经准备好了。", final: true, now: 1.3)
+        XCTAssertEqual(scheduler.current?.utteranceID, next,
+                       "new translated subtitles cannot wait for the old original-language pages")
+    }
+
+    func testQueuedTranslationStartsAfterPrimaryTextWithoutExtraOriginalOnlyPages() {
+        var scheduler = CaptionScheduler()
+        let first = UUID(), next = UUID()
+        scheduler.update(id: first, source: String(repeating: "verbose original words ", count: 20),
+                         translation: "上一句译文。", final: true, now: 0)
+        let deadline = scheduler.nextDeadline!
+        scheduler.update(id: next, source: "Next.", translation: "下一句。", final: true, now: 0.1)
+        XCTAssertEqual(scheduler.current?.utteranceID, first)
+        scheduler.advance(now: deadline + 0.01)
+        XCTAssertEqual(scheduler.current?.utteranceID, next)
+    }
+    func testHeldTranslationCannotCollapseBackToItsFirstSentence() {
+        var scheduler = CaptionScheduler()
+        let id = UUID(), source = String(repeating: "source text ", count: 30)
+        scheduler.update(id: id, source: source, translation: "第一句话。", final: false, now: 0)
+        scheduler.update(id: id, source: source, translation: "第一句话。第二句话。", final: true, now: 0.1)
+        let visible = scheduler.current!.translation.display
+        scheduler.advance(now: scheduler.nextDeadline! + 0.01)
+        XCTAssertEqual(scheduler.current?.translation.raw, "")
+        XCTAssertEqual(scheduler.current?.translation.display, visible,
+                       "holding context for longer source text cannot rewind the translated subtitle")
+    }
+    func testReadyContinuationAppearsInTheAvailableSecondLineWithoutWaitingForOldPage() {
+        var scheduler = CaptionScheduler()
+        let id = UUID()
+        let first = "我们现在开始讨论今天的项目安排，"
+        let next = "接下来检查预算。"
+        scheduler.update(id: id, source: "", translation: first, final: false, now: 0)
+        let original = scheduler.current!
+        let oldDeadline = scheduler.nextDeadline
+        scheduler.update(id: id, source: "", translation: first + next, final: false, now: 0.5)
+        XCTAssertEqual(scheduler.current?.id, original.id, "continuations should grow the existing caption")
+        XCTAssertTrue(scheduler.current?.translation.raw.contains(next) == true,
+                      "ready translated words must use available lines instead of waiting seconds in a hidden queue")
+        XCTAssertTrue(scheduler.current?.translation.raw.hasPrefix(first) == true)
+        if let oldDeadline, let newDeadline = scheduler.nextDeadline {
+            XCTAssertLessThanOrEqual(newDeadline, oldDeadline + CaptionPaginator.readingUnits(next) + 0.01,
+                                     "appending new words must not restart reading the old words")
+        }
+    }
+
+    func testFinalRewordingCannotHideAnAlreadyVisibleContinuation() {
+        var scheduler = CaptionScheduler()
+        let id = UUID(), first = "我想用我的卡支付电费。"
+        scheduler.update(id: id, source: "", translation: first, final: false, now: 0)
+        scheduler.update(id: id, source: "", translation: first + "可以请您帮我吗？", final: false, now: 0.5)
+        XCTAssertTrue(scheduler.current?.translation.raw.contains("可以请您帮我吗") == true)
+        scheduler.update(id: id, source: "", translation: first + "您能帮我一下吗？", final: true, now: 0.8)
+        XCTAssertTrue(scheduler.current?.translation.raw.contains("您能帮我一下吗") == true,
+                      "finalization must not collapse a full caption back to its old first sentence")
+    }
     func testEnglishRemainsVisibleAcrossExtraTranslationPages() {
         var scheduler = CaptionScheduler()
         let source = "Classify material properties and geometry."
@@ -35,11 +196,12 @@ final class CaptionSchedulerTests: XCTestCase {
         XCTAssertTrue(scheduler.current?.source.display.isEmpty == true)
     }
 
-    func testOneQueuedSegmentShortensDisplayWaitImmediately() {
+    func testQueuedSegmentsKeepEnoughTimeToRead() {
         var scheduler = CaptionScheduler()
         scheduler.update(id: UUID(), source: "A long sentence.", translation: "这是一句阅读时间足够长但不能挡住后面新字幕的中文翻译。", final: true, now: 0)
         scheduler.update(id: UUID(), source: "Next.", translation: "下一句。", final: true, now: 0.1)
-        XCTAssertLessThanOrEqual(scheduler.nextDeadline!, 1.2, "even one queued segment must shorten the display wait")
+        let effort = CaptionPaginator.readingUnits(scheduler.current!.translation.raw)
+        XCTAssertGreaterThanOrEqual(scheduler.nextDeadline!, effort, "queue pressure must not speed past reading time")
     }
 
     func testLiveTranslationIsNotHeldForLongSourceReadingTime() {
@@ -62,19 +224,44 @@ final class CaptionSchedulerTests: XCTestCase {
         XCTAssertLessThan(now, 2.5, "source-only trailing pages must not accumulate seconds of artificial lag")
     }
 
-    func testRepeatedRevisionsCannotIndefinitelyPostponeUnreadPages() {
+    func testSourceRevisionsCannotPostponeAStableTranslationPage() {
         var scheduler = CaptionScheduler()
         let id = UUID()
-        scheduler.update(id: id, source: "", translation: "原来的说法。", final: false, now: 0)
+        scheduler.update(id: id, source: "Original source.", translation: "这个译文保持稳定。", final: false, now: 0)
         scheduler.update(id: UUID(), source: "", translation: "后面的句子。", final: true, now: 0.1)
+        let initialDeadline = scheduler.nextDeadline!
         for n in 1...5 {
-            scheduler.update(id: id, source: "", translation: "第\(n)版修正说法。", final: false, now: Double(n) * 0.4)
+            scheduler.update(id: id, source: "Source revision \(n).", translation: "这个译文保持稳定。", final: false, now: Double(n) * 0.4)
             if let deadline = scheduler.nextDeadline {
-                XCTAssertLessThanOrEqual(deadline, 2.4)
+                XCTAssertEqual(deadline, initialDeadline)
             } else {
                 XCTAssertNil(scheduler.current, "a fully read live cue may await finalization, never restart its reading clock")
             }
         }
+        XCTAssertLessThanOrEqual(initialDeadline, 2)
+    }
+
+    func testLateVisibleCorrectionGetsTimeForItsChangedWords() {
+        var scheduler = CaptionScheduler()
+        let id = UUID()
+        scheduler.update(id: id, source: "Google benefits.", translation: "Google will not only offer generous compensation.", final: false, now: 5.7)
+        scheduler.update(id: UUID(), source: "Next.", translation: "Next.", final: true, now: 5.8)
+        scheduler.update(id: id, source: "Google recruits talent.", translation: "Google not only recruits top talent with generous compensation.", final: false, now: 9.7)
+        let effort = CaptionPaginator.readingUnits("not only recruits top talent with")
+        XCTAssertGreaterThanOrEqual(scheduler.nextDeadline!, 9.7 + effort)
+        let deadline = scheduler.nextDeadline!
+        scheduler.update(id: id, source: "A later source wording revision.", translation: "Google not only recruits top talent with generous compensation.", final: false, now: 10.5)
+        XCTAssertEqual(scheduler.nextDeadline!, deadline)
+    }
+
+    func testMinorRewordingCannotRestartReadingTheWholeCaption() {
+        var scheduler = CaptionScheduler()
+        let id = UUID()
+        scheduler.update(id: id, source: "", translation: "我们现在开始讨论今天的项目安排。", final: false, now: 0)
+        let deadline = max(1.2, CaptionPaginator.readingUnits(scheduler.current!.translation.raw) + 0.35)
+        scheduler.update(id: id, source: "", translation: "我们现在开始讨论明天的项目安排。", final: true, now: 1.5)
+        XCTAssertLessThanOrEqual(scheduler.nextDeadline!, deadline + 0.01)
+        XCTAssertTrue(scheduler.current?.translation.raw.contains("明天") == true)
     }
 
     func testModelWaitIsNotChargedToFirstTranslatedCueReadingTime() {
@@ -210,26 +397,31 @@ final class CaptionSchedulerTests: XCTestCase {
         for index in 0..<20 {
             let id = UUID()
             let source = "Hello. Task \(index). Finished \(index)."
-            scheduler.update(id: id, source: source, translation: "你好。第\(index)项。完成\(index)项。", final: false, now: now)
-            displayed.append(scheduler.current!.translation.raw)
+            let translation = "你好。第\(index)项。完成\(index)项。"
+            scheduler.update(id: id, source: source, translation: translation, final: false, now: now)
+            let read = scheduler.current!.translation.raw
+            displayed.append(read)
             now = scheduler.nextDeadline! + 0.01
             scheduler.advance(now: now)
             let currentID = scheduler.current?.id
             scheduler.update(id: id, source: source, translation: "您好。第\(index)项。完成\(index)项。", final: false, now: now + 0.1)
             XCTAssertEqual(scheduler.current?.source.raw, "Task \(index). ", "a revision must never rewind to Hello")
-            XCTAssertEqual(scheduler.current?.translation.raw, "第\(index)项。")
+            XCTAssertFalse(scheduler.current?.translation.raw.contains("你好。") == true)
+            XCTAssertFalse(scheduler.current?.translation.raw.contains("您好。") == true)
             XCTAssertEqual(scheduler.current?.id, currentID, "the visible cue must not jump backwards")
-            scheduler.update(id: id, source: source, translation: "您好。第\(index)项。完成\(index)项。", final: true, now: now + 0.2)
+            scheduler.update(id: id, source: source, translation: "你好。第\(index)项。完成\(index)项。", final: true, now: now + 0.2)
             let rest = drain(&scheduler, now: &now)
+            XCTAssertEqual(read + rest.map(\.translation.raw).joined(), translation,
+                           "packing short continuations must neither replay nor lose any translated words")
             displayed += rest.map(\.translation.raw)
             now += 1
         }
         XCTAssertGreaterThan(now, 60, "exercise a stream longer than the reported 40s onset")
-        XCTAssertEqual(displayed.filter { $0 == "你好。" }.count, 20)
-        XCTAssertFalse(displayed.contains("您好。"), "reworded greetings were already read")
+        XCTAssertEqual(displayed.joined().components(separatedBy: "你好。").count - 1, 20)
+        XCTAssertFalse(displayed.joined().contains("您好。"), "reworded greetings were already read")
         for index in 0..<20 {
-            XCTAssertEqual(displayed.filter { $0 == "第\(index)项。" }.count, 1)
-            XCTAssertEqual(displayed.filter { $0 == "完成\(index)项。" }.count, 1)
+            XCTAssertEqual(displayed.joined().components(separatedBy: "第\(index)项。").count - 1, 1)
+            XCTAssertEqual(displayed.joined().components(separatedBy: "完成\(index)项。").count - 1, 1)
         }
     }
 
@@ -249,9 +441,9 @@ final class CaptionSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.current?.source.raw, "How are you?", "never rewind the paired source")
         scheduler.update(id: id, source: "Hello. How are you?", translation: "您好。你好吗？", final: true, now: 1.1)
         var now = 1.1
-        let corrected = drain(&scheduler, now: &now)
-        XCTAssertEqual(corrected.map(\.source.raw).joined(), "How are you?")
-        XCTAssertEqual(corrected.map(\.translation.raw).joined(), "你好吗？")
+        let remaining = drain(&scheduler, now: &now)
+        XCTAssertEqual(remaining.map(\.source.raw).joined(), "How are you?")
+        XCTAssertEqual(remaining.map(\.translation.raw).joined(), "你好吗？")
     }
 
     func testReplacementTokenPrefixDoesNotRewindReadCaptionPrematurely() {
@@ -265,7 +457,7 @@ final class CaptionSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.current?.translation, previous?.translation)
     }
 
-    func testFinalCorrectionUpdatesUnreadPageWithoutReplayingReadText() {
+    func testFinalRewordingDoesNotReplayReadTextOrDelayTheNextSentence() {
         var scheduler = CaptionScheduler()
         let id = UUID()
         scheduler.update(id: id, source: "One. Two.", translation: "第一。第二。", final: false, now: 0)
@@ -276,6 +468,7 @@ final class CaptionSchedulerTests: XCTestCase {
         let cues = drain(&scheduler, now: &now)
         XCTAssertEqual(cues.map(\.translation.raw).joined(), "第三。")
         XCTAssertEqual(cues.map(\.source.raw).joined(), "Three.")
+        XCTAssertTrue(cues.allSatisfy(\.isCorrection))
     }
 
     func testFinalizationReleasesAnAlreadyReadLiveHead() {
@@ -336,7 +529,7 @@ final class CaptionSchedulerTests: XCTestCase {
         scheduler.update(id: id, source: "", translation: "原来的说法。", final: false, now: 0)
         scheduler.update(id: id, source: "", translation: "最终修正之后这句话需要重新给读者留足阅读时间。", final: true, now: 10)
         XCTAssertGreaterThanOrEqual(scheduler.nextDeadline!, 10.75)
-        XCTAssertLessThanOrEqual(scheduler.nextDeadline!, 12.4)
+        XCTAssertLessThanOrEqual(scheduler.nextDeadline!, 16)
         scheduler.advance(now: 11)
         XCTAssertNotNil(scheduler.current)
     }
@@ -369,10 +562,11 @@ final class CaptionSchedulerTests: XCTestCase {
     func testPresenterTimerAdvancesWithoutNewInput() async throws {
         let presenter = CaptionPresenter()
         presenter.update(id: UUID(), source: "", translation: "第一句。第二句。", final: true)
-        XCTAssertEqual(presenter.visible?.translation.raw, "第一句。")
+        XCTAssertEqual(presenter.visible?.translation.raw, "第一句。第二句。")
+        XCTAssertTrue(presenter.isDraining)
         try await Task.sleep(for: .seconds(1.5))
-        XCTAssertEqual(presenter.visible?.translation.raw, "第二句。")
-        try await Task.sleep(for: .seconds(1.5))
+        XCTAssertEqual(presenter.visible?.translation.raw, "第一句。第二句。",
+            "keep the last live window visible after its timer drains")
         XCTAssertFalse(presenter.isDraining)
         presenter.reset()
         XCTAssertNil(presenter.visible)

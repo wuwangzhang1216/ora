@@ -11,10 +11,7 @@ struct CaptionTypography: Equatable {
     var lines = 2
 
     var sourceFont: NSFont { .systemFont(ofSize: sourceSize) }
-    var translationFont: NSFont {
-        let base = NSFont.systemFont(ofSize: translationSize, weight: .semibold)
-        return base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: translationSize) } ?? base
-    }
+    var translationFont: NSFont { .systemFont(ofSize: translationSize, weight: .medium) }
 }
 
 struct CaptionSlice: Equatable {
@@ -25,16 +22,18 @@ struct CaptionSlice: Equatable {
     /// language continues; paginator output itself is always a fresh slice.
     let display: String
     let sealed: Bool
+    var fillsAvailableLines = false
     static let empty = CaptionSlice(raw: "", display: "", sealed: false)
 }
 
 enum CaptionPaginator {
+    static let cjkCharactersPerSecond: Double = 8
     private static let endings = Set<Character>("。！？!?；;\n")
     private static let clauses = Set<Character>("，,：:、")
     private static let closers = Set<Character>("\"'”’」』】）》)]}")
-    private static let abbreviations: Set<String> = ["mr", "mrs", "ms", "dr", "prof", "sr", "jr", "vs", "etc", "e.g", "i.e"]
 
-    static func page(_ text: String, font: NSFont, width: CGFloat, lines: Int = 2, final: Bool) -> CaptionSlice {
+    static func page(_ text: String, font: NSFont, width: CGFloat, lines: Int = 2, final: Bool,
+                     fillAvailableLines: Bool = false) -> CaptionSlice {
         guard !text.isEmpty else { return .empty }
         let chars = Array(text)
         var fit = fittedCount(text, font: font, width: width, lines: lines)
@@ -59,12 +58,14 @@ enum CaptionPaginator {
             // Never push closing punctuation off the physical page.
             guard end <= fit else { continue }
             if endings.contains(c) || (c == "." && isSentencePeriod(chars, at: i)) {
-                if sentence == nil { sentence = end }
+                if fillAvailableLines || sentence == nil { sentence = end }
             } else if clauses.contains(c), readingUnits(String(chars[0...i])) >= 2.0 {
-                if clause == nil { clause = end }
+                if fillAvailableLines || clause == nil { clause = end }
             }
         }
-        var end = min(sentence ?? fit, clause ?? fit)
+        // A displayed continuation can occupy the remaining line even when
+        // the next full translated sentence needs another page afterwards.
+        var end = fillAvailableLines ? fit : min(sentence ?? fit, clause ?? fit)
         // Consume spacing with the preceding page so the next starts on text.
         while end < chars.count && chars[end].isWhitespace { end += 1 }
         var raw = String(chars.prefix(end))
@@ -78,10 +79,11 @@ enum CaptionPaginator {
             rendered = wrappedLines(raw.trimmingCharacters(in: .whitespacesAndNewlines), font: font, width: width)
         }
         return CaptionSlice(raw: raw, display: rendered.joined(separator: "\n"),
-                            sealed: final || sentence != nil || clause != nil || end < chars.count)
+                            sealed: final || sentence != nil || clause != nil || end < chars.count,
+                            fillsAvailableLines: fillAvailableLines)
     }
 
-    /// Seconds of reading effort: ~3 Latin words/s or ~6 CJK characters/s.
+    /// Seconds of reading effort: ~3 Latin words/s or ~8 CJK characters/s.
     /// This is local presentation pacing, unrelated to ASR endpointing.
     static func readingUnits(_ text: String) -> Double {
         var words = 0
@@ -100,7 +102,7 @@ enum CaptionPaginator {
                 inWord = false
             }
         }
-        return max(Double(words) / 3, Double(wordCharacters) / 18) + Double(wide) / 6
+        return max(Double(words) / 3, Double(wordCharacters) / 18) + Double(wide) / cjkCharactersPerSecond
     }
 
     private static func isWide(_ c: Character) -> Bool {
@@ -111,13 +113,7 @@ enum CaptionPaginator {
     }
 
     private static func isSentencePeriod(_ chars: [Character], at i: Int) -> Bool {
-        if i > 0, i + 1 < chars.count, chars[i - 1].isNumber, chars[i + 1].isNumber { return false }
-        if i + 1 < chars.count, chars[i + 1].isLetter { return false }
-        let token = String(chars[..<i].reversed().prefix { $0.isLetter || $0 == "." }.reversed()).lowercased()
-        if abbreviations.contains(token) || (token.count == 1 && token.first?.isLetter == true) { return false }
-        let initials = token.split(separator: ".")
-        if initials.count > 1 && initials.allSatisfy({ $0.count == 1 && $0.first?.isLetter == true }) { return false }
-        return true
+        SentenceBoundary.isSentencePeriod(chars, at: i)
     }
 
     private static func typesetter(_ text: String, font: NSFont) -> CTTypesetter {
