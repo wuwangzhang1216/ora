@@ -1,12 +1,10 @@
 <p align="center">
-  <img src="docs/screenshots/app-icon.png" width="160" alt="Ora app icon"/>
+  <img src="docs/posters/github-banner.jpg" width="880" alt="Ora — Say it. See it translated. Live speech translation for macOS."/>
 </p>
 
-<h1 align="center">Ora</h1>
-
 <p align="center">
-  <strong>Real-time local speech translation for macOS.</strong><br/>
-  Runs locally by default — optional RealRouter API speech recognition and translation.
+  <strong>Live captions for meetings, videos, and conversations.</strong><br/>
+  Local by default, with optional RealRouter speech recognition and translation.
 </p>
 
 <p align="center">
@@ -16,6 +14,11 @@
   <img src="https://img.shields.io/badge/macOS-15%2B-0a78be" alt="macOS 15+"/>
   <img src="https://img.shields.io/badge/Apple%20Silicon-required-0a78be" alt="Apple Silicon"/>
   <img src="https://img.shields.io/badge/license-MIT-0a78be" alt="MIT"/>
+</p>
+
+<p align="center">
+  <a href="https://main.d1cdtuylr567og.amplifyapp.com/">Website</a> ·
+  <a href="https://github.com/wuwangzhang1216/ora/releases/latest">Download for macOS</a>
 </p>
 
 ---
@@ -34,16 +37,21 @@ Ora listens to your microphone and streams live translations of what you say int
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/caption-window.png" width="640" alt="Live caption window with Chinese source and English translation"/>
-  <br/>
-  <em>Floating caption card with recognized speech above the translation.</em>
+  <img src="docs/posters/github-captions.jpg" width="880" alt="Ora v0.10.0 caption layouts. Bilingual shows recognized English above the Chinese translation. Compact uses a narrower window for the translation."/>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/preferences.png" width="420" alt="Preferences window"/>
-  <br/>
-  <em>Preferences — target language, quality tier, ASR source hint, VAD sensitivity + end-of-speech window, hotkey.</em>
-</p>
+<details>
+<summary>View the original macOS screenshots</summary>
+
+**Bilingual**
+
+![Native Ora bilingual caption preview](docs/screenshots/v0.10.0/bilingual.jpg)
+
+**Compact**
+
+![Native Ora compact caption preview](docs/screenshots/v0.10.0/compact.jpg)
+
+</details>
 
 ## Download
 

@@ -1540,7 +1540,104 @@ func renderFree() -> NSImage {
     }
 }
 
+// MARK: - GitHub artwork
+
+func drawGitHubBackdrop(_ ctx: CGContext, size: CGSize) {
+    drawLinearGradient(ctx, colors: [
+        NSColor(srgbRed: 0.035, green: 0.052, blue: 0.096, alpha: 1),
+        NSColor(srgbRed: 0.095, green: 0.106, blue: 0.224, alpha: 1),
+    ], from: .zero, to: CGPoint(x: size.width, y: size.height))
+    drawRadialGlow(ctx, center: CGPoint(x: size.width * 0.79, y: size.height * 0.62),
+                   radius: size.width * 0.48, color: brandTeal, innerAlpha: 0.30)
+    drawRadialGlow(ctx, center: CGPoint(x: size.width * 0.99, y: size.height * 0.01),
+                   radius: size.width * 0.51, color: brandViolet, innerAlpha: 0.35)
+}
+
+func renderGitHubBanner() -> NSImage {
+    makeImage(size: CGSize(width: 1440, height: 448)) { ctx, size in
+        drawGitHubBackdrop(ctx, size: size)
+        let center = CGPoint(x: 1110, y: 226)
+        ctx.setLineWidth(1.5)
+        for radius: CGFloat in [134, 167, 203, 242, 283, 326] {
+            ctx.setStrokeColor(brandTeal.withAlphaComponent(0.20).cgColor)
+            ctx.strokeEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                         width: radius * 2, height: radius * 2))
+        }
+        drawEchoRings(ctx, center: center, diameter: 234,
+                      solidFill: NSColor(srgbRed: 0.71, green: 0.96, blue: 0.98, alpha: 1))
+
+        drawText("ORA", topLeft: CGPoint(x: 82, y: 380),
+                 font: monoFont(24, weight: .semibold), color: brandTeal, kern: 5)
+        drawText("Say it.", topLeft: CGPoint(x: 76, y: 332),
+                 font: font(86, weight: .semibold), color: nearWhite, kern: -3)
+        drawText("See it translated.", topLeft: CGPoint(x: 76, y: 236),
+                 font: font(86, weight: .semibold), color: nearWhite, kern: -3)
+        drawText("Live speech translation for macOS", topLeft: CGPoint(x: 83, y: 110),
+                 font: font(30, weight: .medium), color: nearWhite.withAlphaComponent(0.74))
+    }
+}
+
+func drawNativeCaption(_ ctx: CGContext, file: String, crop: CGRect, at origin: CGPoint, width: CGFloat) {
+    let url = outputDir.deletingLastPathComponent()
+        .appendingPathComponent("screenshots/v0.10.0/\(file)")
+    guard let screenshot = try? Data(contentsOf: url),
+          let image = NSBitmapImageRep(data: screenshot)?.cgImage?.cropping(to: crop) else {
+        fatalError("Could not read caption screenshot: \(url.path)")
+    }
+    let rect = CGRect(origin: origin, size: CGSize(width: width, height: width * crop.height / crop.width))
+    let path = roundedRectPath(rect, radius: 28 * width / crop.width)
+    drawShadow(ctx, offset: CGSize(width: 0, height: -12), blur: 42) {
+        ctx.addPath(path)
+        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.fillPath()
+    }
+    ctx.saveGState()
+    ctx.addPath(path)
+    ctx.clip()
+    ctx.draw(image, in: rect)
+    ctx.restoreGState()
+    ctx.addPath(path)
+    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.15).cgColor)
+    ctx.setLineWidth(1.5)
+    ctx.strokePath()
+}
+
+func renderGitHubCaptionPoster() -> NSImage {
+    makeImage(size: CGSize(width: 1440, height: 1000)) { ctx, size in
+        drawGitHubBackdrop(ctx, size: size)
+        drawText("ORA  /  CAPTION LAYOUTS", topLeft: CGPoint(x: 88, y: 930),
+                 font: monoFont(22, weight: .semibold), color: brandTeal, kern: 3)
+        drawText("Captions that fit.", topLeft: CGPoint(x: 83, y: 879),
+                 font: font(84, weight: .semibold), color: nearWhite, kern: -3)
+        drawText("Choose how much of the conversation stays on screen.",
+                 topLeft: CGPoint(x: 89, y: 761), font: font(29, weight: .medium),
+                 color: nearWhite.withAlphaComponent(0.73))
+
+        drawText("01  /  BILINGUAL", topLeft: CGPoint(x: 89, y: 674),
+                 font: monoFont(22, weight: .semibold), color: nearWhite.withAlphaComponent(0.82), kern: 1)
+        drawNativeCaption(ctx, file: "bilingual.jpg", crop: CGRect(x: 58, y: 50, width: 1196, height: 292),
+                          at: CGPoint(x: 88, y: 317), width: 1264)
+
+        drawText("02  /  COMPACT", topLeft: CGPoint(x: 89, y: 239),
+                 font: monoFont(22, weight: .semibold), color: nearWhite.withAlphaComponent(0.82), kern: 1)
+        drawText("More room for calls", topLeft: CGPoint(x: 89, y: 189),
+                 font: font(33, weight: .semibold), color: nearWhite)
+        drawText("and screen sharing.", topLeft: CGPoint(x: 89, y: 146),
+                 font: font(33, weight: .semibold), color: nearWhite)
+        drawNativeCaption(ctx, file: "compact.jpg", crop: CGRect(x: 58, y: 50, width: 836, height: 220),
+                          at: CGPoint(x: 512, y: 66), width: 840)
+        drawText("ORA v0.10.0  /  NATIVE APP PREVIEWS", topLeft: CGPoint(x: 89, y: 39),
+                 font: monoFont(18, weight: .medium), color: nearWhite.withAlphaComponent(0.68), kern: 1)
+    }
+}
+
 // MARK: - Run
+
+if CommandLine.arguments.dropFirst().contains("--github") {
+    save(renderGitHubBanner(), as: "github-banner.jpg")
+    save(renderGitHubCaptionPoster(), as: "github-captions.jpg")
+    exit(0)
+}
 
 print("Rendering Ora promo posters → \(outputDir.path)")
 save(renderHeroMockupDark(),  as: "hero-dark.jpg")

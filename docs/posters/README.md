@@ -42,6 +42,15 @@ swift docs/posters/generate-posters.swift
 No external dependencies — AppKit + CoreGraphics only. Requires macOS
 with Xcode command-line tools. SF Symbol glyphs use the system library.
 
+Render just the GitHub banner and caption poster with:
+
+```bash
+swift docs/posters/generate-posters.swift --github
+```
+
+The caption poster uses the two native preview captures in
+[`../screenshots/v0.10.0`](../screenshots/v0.10.0).
+
 ## Editing
 
 Primitives at the top of the script:
