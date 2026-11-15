@@ -44,5 +44,10 @@
   "submittedForReview": false,
   "testersInvited": false,
   "released": false,
-  "observedAt": "2026-11-15T02:47:41.907562+00:00"
+  "observedAt": "2026-11-15T02:53:52.164645+00:00",
+  "appVersionStatus": "Ready for Review",
+  "draftSubmissionItemStatus": "Ready to Submit",
+  "privacyDeclarationPublished": true,
+  "contentRightsSaved": true,
+  "finalSubmitForReviewClicked": false
 }

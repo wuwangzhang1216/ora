@@ -1,5 +1,5 @@
 {
-  "status": "App Store Connect record 6834983543 prepared; macOS 0.10.1 build 15 uploaded via Xcode, processed by Apple, Ready to Submit. Not submitted for review or released.",
+  "status": "App Store Connect record 6834983543: macOS 0.10.1 build 15 uploaded and processed; version Ready for Review; draft submission contains one Item Ready to Submit. Final Submit for Review not clicked; not released.",
   "bundleId": "com.wangzhangwu.ora",
   "sku": "ora-macos",
   "version": "0.10.1",
@@ -47,7 +47,7 @@
         "when": "Optional API translation after per-session consent"
       }
     ],
-    "status": "Saved as an unpublished App Store Connect draft: optional Audio Data and Other User Content, App Functionality, linked to identity, no tracking. Provider policy/retention verification and owner review remain before Publish."
+    "status": "Published in App Store Connect after explicit owner confirmation of external-service policy consistency and authorization. Audio Data and Other User Content: App Functionality, linked to identity, no tracking."
   },
   "ageRating": {
     "status": "Live questionnaire completed and saved; Apple calculated 4+, Not Applicable age category (not Made for Kids). No built-in mature content or broad user-content distribution; user-selected audio is processed locally.",
@@ -73,5 +73,6 @@
     }
   },
   "appStoreConnectId": "6834983543",
-  "appStoreConnectUrl": "https://appstoreconnect.apple.com/apps/6834983543/distribution"
+  "appStoreConnectUrl": "https://appstoreconnect.apple.com/apps/6834983543/distribution",
+  "contentRights": "Owner explicitly confirmed necessary third-party content rights and authorized Yes; saved in App Information."
 }
