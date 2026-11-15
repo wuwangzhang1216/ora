@@ -50,9 +50,7 @@ done
 
 cp "$HERE/Info.plist" "$APP_DIR/Contents/Info.plist"
 
-if [ -f "$HERE/Resources/AppIcon.icns" ]; then
-    cp "$HERE/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-fi
+bash "$HERE/scripts/compile-icon.sh" "$APP_DIR/Contents/Resources"
 
 echo "[run] bundle assembled at $APP_DIR"
 echo "[run] launching binary directly — stdio stays connected"

@@ -122,9 +122,7 @@ if [ "$APP_STORE" = true ] && [ "$PREPARE_ONLY" != true ]; then
     DEVELOPER_ID="$APP_STORE_APPLICATION_IDENTITY"
 fi
 
-if [ -f "$HERE/Resources/AppIcon.icns" ]; then
-    cp "$HERE/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-fi
+bash "$HERE/scripts/compile-icon.sh" "$APP_DIR/Contents/Resources"
 
 # ── Sign ───────────────────────────────────────────────────────────────
 if [ "$SIGN_MODE" = "adhoc" ]; then

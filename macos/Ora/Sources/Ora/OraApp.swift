@@ -240,9 +240,8 @@ struct OraApp: App {
     }
 }
 
-/// Menu bar icon — echo-ring motif matching the app's .icns logo: an outer
-/// ring + filled center dot. Rendered as an NSImage template so macOS
-/// auto-tints it for dark/light menu bar appearance.
+/// The approved folded-caption mark, rendered as a template so macOS
+/// supplies the appropriate menu bar color in light and dark appearances.
 private struct MenuBarLabel: View {
     let phase: TranslatorEngine.Phase
 
@@ -253,45 +252,20 @@ private struct MenuBarLabel: View {
         case .error:
             Image(systemName: "exclamationmark.triangle")
         default:
-            Image(nsImage: MenuBarLabel.echoRingImage)
+            Image(nsImage: MenuBarLabel.foldImage)
         }
     }
 
-    /// Cached template NSImage. Built once because the menu bar label view
-    /// body is re-evaluated on every phase change.
-    private static let echoRingImage: NSImage = {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            let s = min(rect.width, rect.height)
-            let center = CGPoint(x: rect.midX, y: rect.midY)
-
-            ctx.setStrokeColor(NSColor.black.cgColor)  // template color, will be tinted
-            ctx.setFillColor(NSColor.black.cgColor)
-            ctx.setLineCap(.round)
-
-            // Outer ring
-            let ringRadius = s * 0.40
-            let ringWidth = s * 0.13
-            ctx.setLineWidth(ringWidth)
-            ctx.strokeEllipse(in: CGRect(
-                x: center.x - ringRadius,
-                y: center.y - ringRadius,
-                width: ringRadius * 2,
-                height: ringRadius * 2
-            ))
-
-            // Center dot
-            let dotRadius = s * 0.15
-            ctx.fillEllipse(in: CGRect(
-                x: center.x - dotRadius,
-                y: center.y - dotRadius,
-                width: dotRadius * 2,
-                height: dotRadius * 2
-            ))
-
-            return true
+    private static let foldImage: NSImage = {
+        let image: NSImage
+        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "pdf"),
+           let template = NSImage(contentsOf: url) {
+            image = template
+        } else {
+            image = NSImage(systemSymbolName: "captions.bubble", accessibilityDescription: "Ora")
+                ?? NSImage(size: NSSize(width: 18, height: 18))
         }
+        image.size = NSSize(width: 18, height: 18)
         image.isTemplate = true
         return image
     }()

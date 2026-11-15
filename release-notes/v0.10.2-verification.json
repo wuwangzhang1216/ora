@@ -1,0 +1,22 @@
+{
+  "version": "0.10.2",
+  "build": "16",
+  "icon": "A3 folded captions",
+  "regressionTests": {
+    "runner": "swift test -j 4",
+    "executed": 194,
+    "skipped": 6,
+    "failed": 0
+  },
+  "notarization": {
+    "id": "5278700a-4490-4a67-a648-bb95a558434d",
+    "status": "Accepted",
+    "stapled": true
+  },
+  "gatekeeper": "accepted: Notarized Developer ID",
+  "mountedDmgVersionVerified": true,
+  "mountedDmgIconVerified": true,
+  "codeSignatureVerified": true,
+  "sha256": "1f6c4435a73c986f0723e2da3ec63ae6c41d2bcf0dfd12811959d64c06018b4e",
+  "appStoreStatus": "Separate App Store submission pending; this receipt covers the public DMG."
+}

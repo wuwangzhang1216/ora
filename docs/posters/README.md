@@ -6,7 +6,7 @@ Rendered by [`generate-posters.swift`](generate-posters.swift).
 benefit per page (the Product Hunt gallery pattern: "show, don't tell,
 one feature per image, heading < 10 words, visuals carry the message").
 
-- Teal → deep-blue brand gradient (same as AppIcon).
+- Teal → deep-blue promotional palette, with the approved A3 folded-caption mark.
 - Faked glassmorphism — atmospheric colored radial blobs behind
   semi-transparent rounded cards with soft drop shadows, top highlight
   and thin 1 px border.

@@ -3,7 +3,7 @@
 //
 // Design direction — "Apple product-page" minimalism:
 //   • Huge whitespace, SF Pro Display typography, kerned hero text.
-//   • Teal → deep-blue brand gradient (same as AppIcon).
+//   • Teal → deep-blue promotional palette.
 //   • Glass / frosted GUI mockup of the Ora caption window, floating
 //     above atmospheric color blobs (faked glassmorphism — no live blur).
 //   • 5 feature pills calling out the core pitch:
@@ -325,11 +325,11 @@ extension NSBezierPath {
     }
 }
 
-// MARK: - Echo rings (app icon mark)
+// MARK: - Approved A3 folded-caption mark
 
-/// Three concentric rings + center dot in the brand gradient (or a
+/// The approved folded-caption silhouette in the brand gradient (or a
 /// solid color override), centered at `center` with overall `diameter`.
-func drawEchoRings(
+func drawOraMark(
     _ ctx: CGContext,
     center: CGPoint,
     diameter: CGFloat,
@@ -345,26 +345,12 @@ func drawEchoRings(
     // Alpha-mask: white shapes on transparent background.
     let mask = NSImage(size: NSSize(width: w, height: h))
     mask.lockFocus()
-    if let mctx = NSGraphicsContext.current?.cgContext {
-        mctx.setStrokeColor(NSColor.white.cgColor)
-        mctx.setFillColor(NSColor.white.cgColor)
-        mctx.setLineCap(.round)
-        let p = CGPoint(x: w / 2, y: h / 2)
-        let rings: [(CGFloat, CGFloat)] = [
-            (0.40, 0.055), (0.27, 0.045), (0.165, 0.040),
-        ]
-        for (rFrac, wFrac) in rings {
-            let r = diameter * rFrac
-            mctx.setLineWidth(diameter * wFrac)
-            mctx.strokeEllipse(in: CGRect(
-                x: p.x - r, y: p.y - r, width: r * 2, height: r * 2
-            ))
-        }
-        let dotR = diameter * 0.075
-        mctx.fillEllipse(in: CGRect(
-            x: p.x - dotR, y: p.y - dotR, width: dotR * 2, height: dotR * 2
-        ))
+    let markURL = outputDir.deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("macos/Ora/Resources/MenuBarIcon.pdf")
+    guard let mark = NSImage(contentsOf: markURL) else {
+        fatalError("Approved Ora mark missing: " + markURL.path)
     }
+    mark.draw(in: CGRect(x: 0, y: 0, width: w, height: h))
     mask.unlockFocus()
 
     if let tiff = mask.tiffRepresentation,
@@ -864,10 +850,10 @@ func drawWordmarkInline(
     let textW = textSize("Ora", font: textFont, kern: -1.5).width
     let totalW = iconDiameter + iconWordGap + textW
     let iconCenter = CGPoint(x: centerX - totalW / 2 + iconDiameter / 2, y: centerY)
-    // On the unified blue backdrop the teal→blue gradient echo-ring blends in —
+    // On the unified blue backdrop the teal→blue mark blends in —
     // default to pure white on dark schemes so the mark matches the wordmark text.
     let resolvedIconFill = iconFill ?? (scheme == .dark ? NSColor.white : nil)
-    drawEchoRings(ctx, center: iconCenter, diameter: iconDiameter, solidFill: resolvedIconFill)
+    drawOraMark(ctx, center: iconCenter, diameter: iconDiameter, solidFill: resolvedIconFill)
     let textOrigin = CGPoint(
         x: iconCenter.x + iconDiameter / 2 + iconWordGap,
         y: centerY + textSize("Ora", font: textFont, kern: -1.5).height / 2
@@ -1557,14 +1543,12 @@ func renderGitHubBanner() -> NSImage {
     makeImage(size: CGSize(width: 1440, height: 448)) { ctx, size in
         drawGitHubBackdrop(ctx, size: size)
         let center = CGPoint(x: 1110, y: 226)
-        ctx.setLineWidth(1.5)
-        for radius: CGFloat in [134, 167, 203, 242, 283, 326] {
-            ctx.setStrokeColor(brandTeal.withAlphaComponent(0.20).cgColor)
-            ctx.strokeEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
-                                         width: radius * 2, height: radius * 2))
+        let iconURL = outputDir.deletingLastPathComponent()
+            .appendingPathComponent("screenshots/app-icon-dark.png")
+        guard let icon = NSImage(contentsOf: iconURL) else {
+            fatalError("Native A3 icon export missing")
         }
-        drawEchoRings(ctx, center: center, diameter: 234,
-                      solidFill: NSColor(srgbRed: 0.71, green: 0.96, blue: 0.98, alpha: 1))
+        icon.draw(in: CGRect(x: center.x - 150, y: center.y - 150, width: 300, height: 300))
 
         drawText("ORA", topLeft: CGPoint(x: 82, y: 380),
                  font: monoFont(24, weight: .semibold), color: brandTeal, kern: 5)
@@ -1626,7 +1610,7 @@ func renderGitHubCaptionPoster() -> NSImage {
                  font: font(33, weight: .semibold), color: nearWhite)
         drawNativeCaption(ctx, file: "compact.jpg", crop: CGRect(x: 58, y: 50, width: 836, height: 220),
                           at: CGPoint(x: 512, y: 66), width: 840)
-        drawText("ORA v0.10.0  /  NATIVE APP PREVIEWS", topLeft: CGPoint(x: 89, y: 39),
+        drawText("ORA v0.10.2  /  NATIVE APP PREVIEWS", topLeft: CGPoint(x: 89, y: 39),
                  font: monoFont(18, weight: .medium), color: nearWhite.withAlphaComponent(0.68), kern: 1)
     }
 }
