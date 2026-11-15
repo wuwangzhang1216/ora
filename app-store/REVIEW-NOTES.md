@@ -1,6 +1,6 @@
 # App Review notes — Ora 0.10.1 (15)
 
-Draft for App Store Connect. No account or payment is required to test local processing. The current local candidate is not App Store distribution-signed or uploaded.
+Draft for App Store Connect. No account or payment is required to test local processing. The local package is now App Store distribution-signed and its signatures/profile have been verified. It has not yet been uploaded or processed by Apple.
 
 ## Where to find the app
 
