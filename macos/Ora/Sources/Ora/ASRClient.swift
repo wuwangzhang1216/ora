@@ -1,4 +1,5 @@
 import Foundation
+import AudioCommon
 import Qwen3ASR
 
 /// Thin wrapper around Qwen3ASRModel. The underlying `transcribe(...)` is synchronous
@@ -21,8 +22,12 @@ actor ASRClient: SpeechRecognitionBackend {
     }
 
     static func load(modelId: String, language: String?) async throws -> ASRClient {
+        let directory = try HuggingFaceDownloader.getCacheDirectory(for: modelId)
         let m = try await Qwen3ASRModel.fromPretrained(
             modelId: modelId,
+            cacheDir: directory,
+            offlineMode: LocalSpeechModelCache.canLoadOffline(
+                from: directory, requiredFiles: LocalSpeechModelCache.recognitionFiles),
             progressHandler: { progress, status in
                 let pct = Int(progress * 100)
                 let msg = status.isEmpty ? "\(pct)%" : "\(status) (\(pct)%)"

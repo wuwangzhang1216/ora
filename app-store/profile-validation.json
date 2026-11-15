@@ -1,0 +1,32 @@
+[
+  {
+    "case": "store profile",
+    "expectedAccepted": true,
+    "passed": true
+  },
+  {
+    "case": "iOS profile",
+    "expectedAccepted": false,
+    "passed": true
+  },
+  {
+    "case": "wrong bundle",
+    "expectedAccepted": false,
+    "passed": true
+  },
+  {
+    "case": "development profile",
+    "expectedAccepted": false,
+    "passed": true
+  },
+  {
+    "case": "expired profile",
+    "expectedAccepted": false,
+    "passed": true
+  },
+  {
+    "case": "debug profile",
+    "expectedAccepted": false,
+    "passed": true
+  }
+]

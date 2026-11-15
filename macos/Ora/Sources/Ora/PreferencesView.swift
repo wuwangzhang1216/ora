@@ -66,8 +66,29 @@ struct PreferencesView: View {
             .tabItem {
                 Label("History", systemImage: "clock.arrow.circlepath")
             }
+
+            Form {
+                Section("Your speech stays local by default") {
+                    Text("Local speech recognition and MLX Swift translation process audio on this Mac. Model downloads require an internet connection the first time. Once cached, these models can run offline.")
+                    Text("RealRouter and Rapid-MLX send data to the server you configure. Ora asks for permission before each listening session. Choose local backends to stop sharing speech with external services.")
+                }
+                Section("History") {
+                    Text("Recognized text and completed translations are saved on this Mac. Manage or delete them in History. Exported files are stored wherever you choose. Ora does not save raw audio recordings.")
+                }
+                Section {
+                    Link("Privacy Policy", destination: OraLinks.privacy)
+                    Link("Help & Support", destination: OraLinks.support)
+                    Button("Open Source Licenses") {
+                        if let url = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Privacy", systemImage: "hand.raised") }
         }
-        .frame(width: 500, height: 620)
+        .frame(width: 600, height: 620)
         .navigationTitle("Ora Preferences")
         .confirmationDialog(
             "Delete all transcript history?",
@@ -211,6 +232,11 @@ struct PreferencesView: View {
 
     private func testRealRouter() {
         engine.stop()
+        let services = ExternalAIUsage.services(
+            recognition: prefs.recognitionBackend, translation: prefs.llmBackend,
+            realRouterURL: prefs.realRouterURL, rapidMLXURL: prefs.rapidMLXURL)
+            .filter { $0.server == prefs.realRouterURL }
+        guard ExternalAIUsage.confirm(services, testing: true) else { return }
         testingRealRouter = true
         realRouterStatus = nil
         let url = prefs.realRouterURL, model = prefs.realRouterModel, target = prefs.targetLanguage

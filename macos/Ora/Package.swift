@@ -33,6 +33,7 @@ let package = Package(
         .executableTarget(
             name: "Ora",
             dependencies: [
+                .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "SpeechVAD", package: "speech-swift"),
                 .product(name: "Qwen3ASR", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),

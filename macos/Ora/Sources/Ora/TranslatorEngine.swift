@@ -50,6 +50,7 @@ final class TranslatorEngine {
     private var asr: (any SpeechRecognitionBackend)?
     private var vad: VADSegmenter?
     private var backend: (any TranslationBackend)?
+    private var externalServices: [ExternalAIUsage] = []
     private var audioSource: AudioSource?
     private var activeAudioSourceKind: AudioSourceKind?
     private var eventLoopTask: Task<Void, Never>?
@@ -163,6 +164,9 @@ final class TranslatorEngine {
                 phase = .loading(status: "Connecting RealRouter…", progress: 0.66)
             }
             self.backend = try await backendTask.value
+            externalServices = ExternalAIUsage.services(
+                recognition: recognitionKind, translation: backendKind,
+                realRouterURL: realRouterURL, rapidMLXURL: rapidMLXURL)
 
             phase = .ready
         } catch {
@@ -224,6 +228,7 @@ final class TranslatorEngine {
         guard case .ready = phase else { return }
         guard activeSession == nil else { return }
         guard let vad, let asr, let backend else { return }
+        guard ExternalAIUsage.confirm(externalServices) else { return }
         clearCaptionDisplay()
         sessionNotice = nil
         receiptGeneration = UUID()

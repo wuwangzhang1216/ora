@@ -79,9 +79,9 @@ enum APILocalBenchmark {
         guard let mode = argument("--mode"), ["api", "local", "hybrid", "rapid"].contains(mode),
               let manifest = argument("--manifest"), let output = argument("--output"),
               let repeats = Int(argument("--repeats") ?? "2"), (1...5).contains(repeats) else {
-            throw BenchmarkError.configuration("Use --mode api|local|hybrid|rapid --manifest FILE --output FILE [--repeats 2].")
+            throw BenchmarkError.configuration("Use --mode api|local|hybrid|rapid --manifest FILE --output FILE|- [--repeats 2].")
         }
-        guard !FileManager.default.fileExists(atPath: output) else {
+        guard output == "-" || !FileManager.default.fileExists(atPath: output) else {
             throw BenchmarkError.configuration("Benchmark output already exists; choose a new output file.")
         }
         let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: URL(fileURLWithPath: manifest)))
@@ -129,14 +129,19 @@ enum APILocalBenchmark {
             translator = try await llm
         }
         let loadMS = milliseconds(loading, .now)
-        FileManager.default.createFile(atPath: output, contents: nil)
-        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: output))
-        defer { try? handle.close() }
+        let handle: FileHandle
+        if output == "-" {
+            handle = .standardOutput
+        } else {
+            FileManager.default.createFile(atPath: output, contents: nil)
+            handle = try FileHandle(forWritingTo: URL(fileURLWithPath: output))
+        }
+        defer { if output != "-" { try? handle.close() } }
         func write<T: Encodable>(_ value: T) throws {
             var data = try JSONEncoder().encode(value)
             data.append(10)
             try handle.write(contentsOf: data)
-            try handle.synchronize()
+            if output != "-" { try handle.synchronize() }
         }
         try write(["kind": "metadata", "mode": mode, "loading_ms": String(loadMS),
                    "asr": mode == "api" ? "RealRouter upstream (server-selected)" : recognition == "apple" ? "Apple SpeechTranscriber / en-US / volatile + fast results" : recognition == "nemotron" ? NemotronASRClient.modelID : "Qwen3-ASR-1.7B-MLX-8bit",

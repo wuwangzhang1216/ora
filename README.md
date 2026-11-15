@@ -256,6 +256,19 @@ cd macos/Ora
 ./run.sh --caption-bilingual-preview
 ```
 
+For a locally signed App Sandbox validation build:
+
+```bash
+cd macos/Ora
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" \
+  ./package.sh --developer-id --sandbox
+open ".sandbox/Ora Sandbox.app" --args --show-captions-on-launch
+```
+
+The validation app uses `com.wangzhangwu.ora.sandbox`, with its own settings,
+model cache, history, and recording permissions. App Store distribution signing
+and submission follow separately after validation.
+
 The recognizer still processes rolling audio snapshots, rather than decoding every
 spoken word in isolation. Update speed depends on your Mac and the selected model;
 translation can revise wording as more context arrives. These changes run locally

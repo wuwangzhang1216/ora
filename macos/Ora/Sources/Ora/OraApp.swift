@@ -47,7 +47,7 @@ final class PreferencesWindowPresenter {
 
         let hosting = NSHostingController(rootView: PreferencesView(engine: engine))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -167,8 +167,8 @@ struct OraApp: App {
                 e.phase = .ready
                 if bilingualPreview {
                     e.captions.update(id: UUID(),
-                        source: "Classify material properties and geometry.",
-                        translation: "先检查物体。然后查看它的表面和内部结构。对材质属性和几何形状进行分类。",
+                        source: "Let's review the schedule and confirm responsibilities before approving the launch.",
+                        translation: "在批准发布之前，我们先检查时间安排，并确认各项职责。",
                         final: true)
                     PanelManager.shared.show(engine: e)
                     return
@@ -418,6 +418,9 @@ struct MenuContent: View {
             PreferencesWindowPresenter.shared.show(engine: engine)
         }
         .keyboardShortcut(",", modifiers: .command)
+
+        Link("Privacy Policy", destination: OraLinks.privacy)
+        Link("Help & Support", destination: OraLinks.support)
 
         Divider()
 

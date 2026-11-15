@@ -1,4 +1,5 @@
 import Foundation
+import AudioCommon
 import SpeechVAD
 
 /// Events emitted by the VAD segmenter. Mirrors the Python VADSegmenter.events() API.
@@ -27,7 +28,11 @@ final class VADSegmenter: @unchecked Sendable {
     }
 
     static func load() async throws -> VADSegmenter {
-        let model = try await SileroVADModel.fromPretrained(engine: .coreml)
+        let directory = try HuggingFaceDownloader.getCacheDirectory(for: SileroVADModel.defaultCoreMLModelId)
+        let model = try await SileroVADModel.fromPretrained(
+            engine: .coreml, cacheDir: directory,
+            offlineMode: LocalSpeechModelCache.canLoadOffline(
+                from: directory, requiredFiles: LocalSpeechModelCache.vadFiles))
         return VADSegmenter(vad: model)
     }
 

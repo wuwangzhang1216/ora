@@ -9,6 +9,8 @@ macos/Ora/.build/
 macos/Ora/.xcode-build/
 macos/Ora/.app/
 macos/Ora/.dist/
+macos/Ora/.sandbox/
+macos/Ora/.app-store/
 
 # iOS app is not part of this macOS pass
 ios/

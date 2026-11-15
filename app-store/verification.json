@@ -1,0 +1,123 @@
+{
+  "version": "0.10.1",
+  "build": "15",
+  "candidateStatus": "ad-hoc signed, no App Store profile; not uploadable",
+  "sandboxEntitlements": {
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.device.audio-input": true,
+    "com.apple.security.files.user-selected.read-write": true,
+    "com.apple.security.network.client": true
+  },
+  "binarySha256": "6716fd7069ec8a0bc7609bcc8e8a4b55dc035c6abda6d85494c9bc2469c4580b",
+  "regressionTests": {
+    "executed": 194,
+    "skipped": 6,
+    "failed": 0,
+    "runner": "swift test -j 4"
+  },
+  "profileValidationCases": 6,
+  "nativeGUI": [
+    "all five preferences tabs visible after widening window",
+    "privacy/support links present",
+    "synthetic API sharing confirmation shown; Cancel returns without running the test",
+    "bilingual and compact layouts captured; original bilingual/High/local settings restored"
+  ],
+  "offlineModelLoadingMS": "795.049375",
+  "offlineReplayKinds": [
+    "metadata",
+    "warmup",
+    "pipeline"
+  ],
+  "screenshots": [
+    {
+      "file": "app-store/screenshots/en-US/01.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    },
+    {
+      "file": "app-store/screenshots/en-US/02.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    },
+    {
+      "file": "app-store/screenshots/en-US/03.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    },
+    {
+      "file": "app-store/screenshots/zh-Hans/01.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    },
+    {
+      "file": "app-store/screenshots/zh-Hans/02.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    },
+    {
+      "file": "app-store/screenshots/zh-Hans/03.jpg",
+      "size": [
+        2880,
+        1800
+      ],
+      "mode": "RGB"
+    }
+  ],
+  "websiteStatus": "privacy/support sources and local browser preview verified; publication awaiting owner confirmation",
+  "accountStatus": "App Store Connect login required; no App Store distribution identities/profile available",
+  "microphoneAndMeeting": "hardware limited; user deferred physical microphone retest",
+  "limitations": [
+    "Xcode SwiftPM test target failed to resolve executable module Ora; SwiftPM test runner completed the suite instead",
+    "No Apple upload validation, TestFlight, or App Review yet",
+    "macOS 15 real-device verification not performed",
+    "External API end-to-end test not included; native cancellation tested"
+  ],
+  "offlineReplayRows": [
+    {
+      "kind": "pipeline",
+      "fixture": "human_en_reader_a",
+      "audioSeconds": 14.225,
+      "firstCaptionMS": 2424.151208,
+      "firstSourceMS": 914.956833,
+      "inputFinished": true,
+      "captionsDrained": true,
+      "segments": 2,
+      "segmentResults": [
+        {
+          "source": "The English forwarded to the French baskets of flowers, of which they had made a plentiful provision to greet the arrival of the young princess.",
+          "finishedMS": 10094.321708000001,
+          "translation": "英国人向法国人递送了花篮，他们为此准备了充足的花篮，以迎接年轻公主的到来。"
+        },
+        {
+          "source": "The French, in return, invited the English to a supper, which was to be given the next day.",
+          "finishedMS": 14596.967292000001,
+          "translation": "法国人则回请英国人共进晚餐，这顿饭定于次日举行。"
+        }
+      ],
+      "droppedSegments": 0,
+      "maximumCaptionQueue": 1,
+      "readingViolations": 0,
+      "inferenceFinishedMS": 16226.110583,
+      "completeMS": 17271.069792,
+      "drainBudgetSeconds": 45,
+      "source": "The English forwarded to the French baskets of flowers, of which they had made a plentiful provision to greet the arrival of the young princess. The French, in return, invited the English to a supper, which was to be given the next day.",
+      "translation": "英国人向法国人递送了花篮，他们为此准备了充足的花篮，以迎接年轻公主的到来。 法国人则回请英国人共进晚餐，这顿饭定于次日举行。"
+    }
+  ],
+  "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate"
+}
