@@ -1,0 +1,60 @@
+{
+  "concepts": [
+    {
+      "name": "Ora Duet",
+      "bundleId": "dev.ora.iconstudy.b-duet",
+      "signatureVerified": true,
+      "containsAudioOrTranslationLogic": false
+    },
+    {
+      "name": "Ora Fold",
+      "bundleId": "dev.ora.iconstudy.a-fold",
+      "signatureVerified": true,
+      "containsAudioOrTranslationLogic": false
+    },
+    {
+      "name": "Ora Lens",
+      "bundleId": "dev.ora.iconstudy.c-lens",
+      "signatureVerified": true,
+      "containsAudioOrTranslationLogic": false
+    }
+  ],
+  "rawSourceSha256": {
+    "a-fold.png": "b5d0237381a7bcd258e58ff1e700a337eb5e9be565d1c8c2b456016e289fe9b4",
+    "b-duet.png": "9e90fb58b21a926942934faadeff0e2bbd6134edd6d093879a80cfb6f9b896f3",
+    "c-lens.png": "174295d5023918159a0528f4fbaae132601b98a29562ba9cc0b297202ee8eced"
+  },
+  "productionOraAssetsChanged": false,
+  "appStoreBuildChanged": false,
+  "nativePreviewAppsLaunched": true,
+  "actualDockCapture": {
+    "verified": true,
+    "method": "Owner explicitly authorized built-in macOS screencapture command after CUA Dock capture failed. Only bottom Dock region captured.",
+    "fullDockScreenshot": "macos/Ora/.app-store/icon-study-v2/dock-native.png",
+    "detailScreenshot": "macos/Ora/.app-store/icon-study-v2/dock-detail-native.png",
+    "detailRegionPoints": [
+      1715,
+      1340,
+      310,
+      100
+    ],
+    "fullRegionPoints": [
+      360,
+      1340,
+      1850,
+      100
+    ],
+    "backingScale": 2,
+    "runningAppOrder": [
+      "Ora Fold",
+      "Ora Duet",
+      "Ora Lens"
+    ],
+    "allThreeVisibleInSameNativeDock": true,
+    "imagesAlteredAfterCapture": false
+  },
+  "comparisonIsDockScreenshot": false,
+  "previewAppsQuitAfterCapture": true,
+  "finderShowAllExecutedAfterCapture": true,
+  "observedAt": "2026-11-15T03:31:29.963888+00:00"
+}
