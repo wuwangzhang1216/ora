@@ -1,0 +1,30 @@
+{
+  "appId": "d1cdtuylr567og",
+  "branch": "main",
+  "sourceCommit": "b26579f",
+  "jobId": "3",
+  "status": "SUCCEED",
+  "archiveSha256": "852b4d3cec4fc9ac377944ffbedef8f2a9eaa153ed136041287903c6e0863d0c",
+  "pages": [
+    {
+      "url": "https://main.d1cdtuylr567og.amplifyapp.com/privacy.html",
+      "status": 200,
+      "sha256": "8f316f05faa24f49bb88c14274f429032f325a8491d43157223e2f2cf942670e",
+      "matchesApprovedSource": true
+    },
+    {
+      "url": "https://main.d1cdtuylr567og.amplifyapp.com/support.html",
+      "status": 200,
+      "sha256": "c5a4407ed935c6f493dcb8afea258cbe0bb203cbf5d38a4e923da2d040b50e54",
+      "matchesApprovedSource": true
+    },
+    {
+      "url": "https://main.d1cdtuylr567og.amplifyapp.com/index.html",
+      "status": 200,
+      "sha256": "e964f1896ee3ba4855416b76d1c5c48e29d16cd0572142feb5cb243af39c7578",
+      "matchesApprovedSource": true
+    }
+  ],
+  "verifiedAt": "2026-11-15T01:08:59.208727+00:00",
+  "ownerApprovedPublication": true
+}

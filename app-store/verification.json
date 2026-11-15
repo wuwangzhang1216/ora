@@ -78,7 +78,7 @@
       "mode": "RGB"
     }
   ],
-  "websiteStatus": "privacy/support sources and local browser preview verified; publication awaiting owner confirmation",
+  "websiteStatus": "Owner-approved policy/support pages published successfully; browser navigation and exact approved-source checks passed",
   "accountStatus": "App Store Connect login required; no App Store distribution identities/profile available",
   "microphoneAndMeeting": "hardware limited; user deferred physical microphone retest",
   "limitations": [
@@ -119,5 +119,6 @@
       "translation": "英国人向法国人递送了花篮，他们为此准备了充足的花篮，以迎接年轻公主的到来。 法国人则回请英国人共进晚餐，这顿饭定于次日举行。"
     }
   ],
-  "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate"
+  "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate",
+  "websiteDeploymentJobId": "3"
 }

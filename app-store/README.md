@@ -36,12 +36,17 @@ APP_STORE_PROFILE="/absolute/path/Ora.provisionprofile" \
 
 Output: `.app-store/Ora.pkg`. Use Apple's Transporter to validate and upload the signed package. Upload processing, TestFlight checks, and App Review remain separate. The script deliberately fails when the required profile/identities are absent, wrong-platform, expired, or for a different app. No Developer ID notarization or DMG is used for this route.
 
+## Published website pages
+
+- [Privacy Policy](https://main.d1cdtuylr567og.amplifyapp.com/privacy.html)
+- [Help & Support](https://main.d1cdtuylr567og.amplifyapp.com/support.html)
+
 ## Unresolved before submission
 
 - App Store Connect login/app record/name availability have not yet been confirmed.
 - The local keychain has a Developer ID Application identity, but no App Store application/installer distribution identities. No macOS Ora App Store profile is installed.
 - The owner must supply real review contact details, confirm pricing/territories, and complete any current agreements and EU trader requirements in App Store Connect.
-- Privacy/support pages are currently local drafts. They were visually checked in the browser but are not live; publish the reviewed policy before uploading a build whose in-app links point to those public URLs.
+- Privacy/support pages were approved by the owner and published to the production website. Browser navigation and exact source-content checks passed; see `website-deployment.json`.
 - Confirm third-party AI provider policies and retention before publishing privacy answers. The prepared manifest conservatively discloses optional audio and other user content for app functionality as linked to identity, since external API requests authenticate to a provider account. This is not a claim that default local processing collects speech.
 - Complete the live encryption and age-rating questionnaires. No exemption or age rating has been guessed in the draft.
 - Physical microphone/Meeting input is hardware-limited, pending retest with an open notebook or external microphone. Only macOS 26.5 on one Apple Silicon Mac was exercised; minimum-version compatibility is not a real-device pass.
