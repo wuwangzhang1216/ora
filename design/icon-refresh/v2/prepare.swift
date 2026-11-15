@@ -32,9 +32,42 @@ func text(_ value: String, x: CGFloat, y: CGFloat, size: CGFloat,
 let previewDir = base.appendingPathComponent(".preview")
 try FileManager.default.createDirectory(at: previewDir, withIntermediateDirectories: true)
 let entries = [(16,1),(16,2),(32,1),(32,2),(128,1),(128,2),(256,1),(256,2),(512,1),(512,2)]
+// Generated PNGs have different amounts of transparent margin. Normalize the
+// opaque tile, not the file canvas, to the Finder icon's roughly 80% footprint.
+// Ignore nearly transparent background noise and soft shadows when measuring.
+let targetTileFraction: CGFloat = 0.80
+let normalizedDir = base.appendingPathComponent("normalized")
+try FileManager.default.createDirectory(at: normalizedDir, withIntermediateDirectories: true)
+func opaqueBounds(_ url: URL) throws -> CGRect {
+    let rep = NSBitmapImageRep(data: try Data(contentsOf: url))!
+    precondition(rep.bitsPerSample == 8 && rep.samplesPerPixel == 4 && !rep.isPlanar)
+    let data = rep.bitmapData!
+    let alpha = rep.bitmapFormat.contains(.alphaFirst) ? 0 : 3
+    var minX = rep.pixelsWide, minY = rep.pixelsHigh, maxX = -1, maxY = -1
+    for y in 0..<rep.pixelsHigh {
+        for x in 0..<rep.pixelsWide where data[y * rep.bytesPerRow + x * 4 + alpha] >= 245 {
+            minX = min(minX, x); maxX = max(maxX, x)
+            minY = min(minY, y); maxY = max(maxY, y)
+        }
+    }
+    precondition(maxX >= minX && maxY >= minY)
+    return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+}
 var images: [NSImage] = []
 for (id, _, title, _) in concepts {
-    let source = NSImage(contentsOf: base.appendingPathComponent("raw/\(id).png"))!
+    let rawURL = base.appendingPathComponent("raw/\(id).png")
+    let raw = NSImage(contentsOf: rawURL)!
+    let rawRep = NSBitmapImageRep(data: try Data(contentsOf: rawURL))!
+    let bounds = try opaqueBounds(rawURL)
+    let scale = 1024 * targetTileFraction / max(bounds.width, bounds.height)
+    let destination = CGRect(x: 512 - bounds.midX * scale,
+        y: 512 - (CGFloat(rawRep.pixelsHigh) - bounds.midY) * scale,
+        width: CGFloat(rawRep.pixelsWide) * scale, height: CGFloat(rawRep.pixelsHigh) * scale)
+    let normalizedURL = normalizedDir.appendingPathComponent("\(id).png")
+    try save(render(1024, 1024) {
+        raw.draw(in: destination, from: .zero, operation: .sourceOver, fraction: 1)
+    }, normalizedURL)
+    let source = NSImage(contentsOf: normalizedURL)!
     images.append(source)
     let set = previewDir.appendingPathComponent("\(id).iconset")
     try FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
@@ -59,7 +92,7 @@ for (id, _, title, _) in concepts {
     let plist: [String: Any] = ["CFBundleIdentifier": "dev.ora.iconstudy.\(id)",
         "CFBundleName": "Ora \(title)", "CFBundleDisplayName": "Ora \(title)",
         "CFBundleExecutable": "IconPreview", "CFBundlePackageType": "APPL",
-        "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
+        "CFBundleVersion": "2", "CFBundleShortVersionString": "1.0",
         "CFBundleIconFile": "Preview", "NSHighResolutionCapable": true,
         "LSMinimumSystemVersion": "15.0"]
     try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)

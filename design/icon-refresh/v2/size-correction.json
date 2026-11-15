@@ -1,0 +1,80 @@
+{
+  "measurement": "Alpha >=245, excludes shadows and residual low-alpha generation noise",
+  "reference": "System Finder.icns, 204/256 opaque tile span (79.6875%)",
+  "targetFraction": 0.8,
+  "rows": [
+    {
+      "file": "a-fold.png",
+      "beforeOpaqueTileFraction": 0.88278,
+      "afterOpaqueTileFraction": 0.79883,
+      "normalizedBounds": [
+        106,
+        103,
+        919,
+        921
+      ],
+      "canvasPixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "file": "b-duet.png",
+      "beforeOpaqueTileFraction": 0.91069,
+      "afterOpaqueTileFraction": 0.7998,
+      "normalizedBounds": [
+        106,
+        102,
+        918,
+        921
+      ],
+      "canvasPixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "file": "c-lens.png",
+      "beforeOpaqueTileFraction": 0.86124,
+      "afterOpaqueTileFraction": 0.79883,
+      "normalizedBounds": [
+        103,
+        109,
+        921,
+        915
+      ],
+      "canvasPixels": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "nativeDockRetest": {
+    "passed": true,
+    "captureRegionPoints": [
+      1535,
+      1340,
+      310,
+      100
+    ],
+    "sourceScreenshot": "macos/Ora/.app-store/icon-study-v2-size-fix/dock-detail-2x.png",
+    "sourcePixels": [
+      620,
+      200
+    ],
+    "normalDisplayScreenshot": "macos/Ora/.app-store/icon-study-v2-size-fix/dock-detail-1x.png",
+    "normalDisplayPixels": [
+      310,
+      100
+    ],
+    "beforeAfterComparison": "macos/Ora/.app-store/icon-study-v2-size-fix/before-after-1x.png",
+    "resamplingNote": "Native 2x screenshots resampled to 1x logical display size for presentation; no composited icons or changed Dock settings.",
+    "sourceOrder": [
+      "System Phone",
+      "Ora Fold",
+      "Ora Duet",
+      "Ora Lens"
+    ],
+    "previewAppsQuit": true
+  }
+}

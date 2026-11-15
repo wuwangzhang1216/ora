@@ -10,6 +10,8 @@ tool. Exact prompts and generation method are preserved in `prompts.json`.
 `concepts.png` compares the artwork and 64/32/16 px reductions. It is a designed
 comparison sheet, not a screenshot of the Dock.
 
+The owner reported oversized Dock tiles. The source artwork occupied 86–91% of its canvas, versus about 80% in the local Finder icon. `normalized/` now contains centered 1024 px assets with an approximately 80% opaque-tile span. All icns sizes, preview apps, and the concept sheet consume those normalized assets. See `size-correction.json` for before/after measurements and the native Dock retest.
+
 `raw/` preserves the generated sources. `prepare.swift` creates standard icns
 resolutions and isolated, clearly named AppKit preview bundles under ignored
 `.preview/`; it also renders the comparison. `IconPreview.swift` is a small

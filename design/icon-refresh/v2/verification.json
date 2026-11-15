@@ -28,6 +28,38 @@
   "appStoreBuildChanged": false,
   "nativePreviewAppsLaunched": true,
   "actualDockCapture": {
+    "passed": true,
+    "captureRegionPoints": [
+      1535,
+      1340,
+      310,
+      100
+    ],
+    "sourceScreenshot": "macos/Ora/.app-store/icon-study-v2-size-fix/dock-detail-2x.png",
+    "sourcePixels": [
+      620,
+      200
+    ],
+    "normalDisplayScreenshot": "macos/Ora/.app-store/icon-study-v2-size-fix/dock-detail-1x.png",
+    "normalDisplayPixels": [
+      310,
+      100
+    ],
+    "beforeAfterComparison": "macos/Ora/.app-store/icon-study-v2-size-fix/before-after-1x.png",
+    "resamplingNote": "Native 2x screenshots resampled to 1x logical display size for presentation; no composited icons or changed Dock settings.",
+    "sourceOrder": [
+      "System Phone",
+      "Ora Fold",
+      "Ora Duet",
+      "Ora Lens"
+    ],
+    "previewAppsQuit": true
+  },
+  "comparisonIsDockScreenshot": false,
+  "previewAppsQuitAfterCapture": true,
+  "finderShowAllExecutedAfterCapture": true,
+  "observedAt": "2026-11-15T03:38:39.795158+00:00",
+  "baselineActualDockCapture": {
     "verified": true,
     "method": "Owner explicitly authorized built-in macOS screencapture command after CUA Dock capture failed. Only bottom Dock region captured.",
     "fullDockScreenshot": "macos/Ora/.app-store/icon-study-v2/dock-native.png",
@@ -53,8 +85,10 @@
     "allThreeVisibleInSameNativeDock": true,
     "imagesAlteredAfterCapture": false
   },
-  "comparisonIsDockScreenshot": false,
-  "previewAppsQuitAfterCapture": true,
-  "finderShowAllExecutedAfterCapture": true,
-  "observedAt": "2026-11-15T03:31:29.963888+00:00"
+  "sizeCorrectionReceipt": "design/icon-refresh/v2/size-correction.json",
+  "normalizedSourceSha256": {
+    "a-fold.png": "3b35bfd53a8ac55bcc6ebaa88ef689ca763aa40f12d68fbadb2e9dea2477921e",
+    "b-duet.png": "3ae91667c4bc28fe3960ec59eec44f655bf84e6d2fe443c09e34589092af06ef",
+    "c-lens.png": "663e73ae62bc3df8f63ae1eda18ae7239be9be96ac62b8289af01377e09c945e"
+  }
 }
