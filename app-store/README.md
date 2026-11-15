@@ -6,6 +6,10 @@
 
 The public [GitHub release](https://github.com/wuwangzhang1216/ora/releases/tag/v0.10.2) and [website](https://main.d1cdtuylr567og.amplifyapp.com/) serve the notarized v0.10.2 DMG. Safari download, checksum, mounted version and A3 icon checks passed. See `../release-notes/v0.10.2-publication.json`.
 
+## A3 icon confirmation
+
+The actual Xcode upload payload for build 16 was recovered and expanded. Its icon resources match A3. Apple also extracted A3 correctly: the build-specific CDN image shows A3, while the app-level header/list references a different, older ring image. No rebuild or resubmission was needed. See [the audit and Apple image comparison](icon-verification-0.10.2/README.md). The public storefront appearance remains pending review/release.
+
 ## Earlier submission — 0.10.1 (15)
 
 The notes below record the earlier preparation and submission as observed on November 14; its review submission was superseded by 0.10.2.

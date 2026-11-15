@@ -1,0 +1,59 @@
+{
+  "version": "0.10.2",
+  "build": "16",
+  "appStoreBuildId": "e6b80072-a494-4a05-8a5b-58b0438aa727",
+  "reviewSubmissionId": "08f091ec-9799-4c6c-a09b-74df71fd2151",
+  "result": "Confirmed: the actual upload package and Apple-hosted build-16 icon both use A3.",
+  "causeOfOldDisplay": "The app-level header/list and the selected build icon reference different CDN assets. The app-level asset remains the prior ring artwork; the build-specific asset is A3. No client-cache or server-refresh timing explanation is asserted.",
+  "appLevelIcon": {
+    "source": "CSS background-image of the app-level header, aria-label Ora \u2014 Live Translation, not the Build 16 icon",
+    "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/83/c4/13/83c413a9-c4cd-29e0-0fbc-8ee53ca9e606/AppIcon.png/135x135ib.png",
+    "sha256": "22b9da79e4c2fef533cda1bf777610b0deb606eff74bb2b19700dfac4c48a6d1"
+  },
+  "submittedBuildIcon": {
+    "buildId": "e6b80072-a494-4a05-8a5b-58b0438aa727",
+    "source": "CSS background-image of the Build 16 App Icon link, inspected in the live version page",
+    "url": "https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/9a/5c/f8/9a5cf8e2-692e-baa0-5692-110d491f2f92/AppIcon-0-0-85-220-0-6-0-2x.png/99x99ib.png",
+    "sha256": "c2f000b14d9ad53be8663078265d581cf2e57bde3bb75492064c61366187be4b"
+  },
+  "actualUploadPackage": {
+    "actualUploadPackage": "macos/Ora/.app-store/XcodeUpload-0.10.2-16/Ora.pkg",
+    "bytes": 40743872,
+    "sha256": "337d40aa079e3f34fcf3489c625f841e069ffe13c442338eb4b5db0e65ca0c11",
+    "version": "0.10.2",
+    "build": "16",
+    "bundleId": "com.wangzhangwu.ora",
+    "iconName": "AppIcon",
+    "iconFile": "AppIcon",
+    "resources": {
+      "AppIcon.icns": {
+        "sha256": "acbe6cd7def67113ecc5dc5d0de412c5a03f92efbf014081fea1a668733f8ab8",
+        "matchesSourceArchive": true
+      },
+      "Assets.car": {
+        "sha256": "1212a86b1519f191087a93479c8db2f716263130062880bd0ae90a91fc93a0d0",
+        "matchesSourceArchive": true
+      }
+    }
+  },
+  "packagePayloadExpandedAndCompared": true,
+  "nativeCatalogIncludes1024pxIcons": true,
+  "hypotheses": [
+    {
+      "hypothesis": "App-level display uses a different image from the submitted build",
+      "result": "Confirmed by inspecting each rendered element and fetching both distinct CDN URLs."
+    },
+    {
+      "hypothesis": "The upload package contains stale icon resources",
+      "result": "Rejected: recovered the exact Xcode upload package, expanded it, and compared both AppIcon.icns and Assets.car byte-for-byte against the approved archive."
+    },
+    {
+      "hypothesis": "Apple failed to extract the native icon",
+      "result": "Rejected for build 16: the build-specific Apple CDN image visibly contains A3."
+    }
+  ],
+  "action": "No new binary and no withdrawal or resubmission. Correct build 16 remains in the existing review queue.",
+  "storefrontIconVerified": false,
+  "storefrontNote": "The app is still waiting for review. Public storefront display is not claimed to have been verified.",
+  "verifiedAt": "2026-11-15T22:43:44.136831+00:00"
+}

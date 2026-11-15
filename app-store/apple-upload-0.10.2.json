@@ -9,7 +9,7 @@
   "preparedPackage": "macos/Ora/.app-store/Ora.pkg",
   "preparedPackageBytes": 21607563,
   "preparedPackageSha256": "c17160ec21ba2b6d0d7d0b87f55e8528f3b93b4e7465b62cca9947f919017eb3",
-  "preparedPackageNote": "Xcode repackaged the signed archive for direct upload. The temporary upload payload was not exported to a persistent export directory; this hash identifies the initial signed package, not the upload payload.",
+  "preparedPackageNote": "The initial signed package is not the Xcode upload payload. The actual 40,743,872-byte payload was subsequently recovered from Xcode distribution staging, expanded and verified; see exportedPackage fields.",
   "icon": "Approved A3 folded-caption icon, with native Assets.car and compatibility ICNS",
   "applicationCertificate": "Mac App Distribution, team 46KF5Z549N",
   "installerSignatureVerified": true,
@@ -29,10 +29,17 @@
   "releaseMode": "Automatically release after App Review",
   "archiveIconMatchesApprovedA3": true,
   "appStoreIconDisplayObservation": {
-    "reviewListThumbnail": "Still displays the prior ring icon",
-    "includedAssetsLightbox": "Did not display an image during this check",
-    "localArchiveAndCompatibilityIcon": "A3 verified",
-    "cause": "Not determined; not assumed to be caching",
+    "appLevelThumbnail": "Still displays prior ring artwork from a separate app-level CDN asset",
+    "build16Thumbnail": "A3 verified directly from the CDN URL on the Build 16 App Icon element",
+    "archiveAndActualUploadPayload": "A3 verified; ICNS and CAR resources match byte-for-byte",
+    "cause": "Different app-level and build-specific image references; no cache explanation assumed",
+    "appleExtractionVerified": true,
     "storefrontIconVerified": false
-  }
+  },
+  "exportedPackage": "macos/Ora/.app-store/XcodeUpload-0.10.2-16/Ora.pkg",
+  "exportedPackageBytes": 40743872,
+  "exportedPackageSha256": "337d40aa079e3f34fcf3489c625f841e069ffe13c442338eb4b5db0e65ca0c11",
+  "actualUploadPayloadRecovered": true,
+  "actualUploadPayloadExpandedAndVerified": true,
+  "iconAuditReceipt": "app-store/icon-verification-0.10.2/verification.json"
 }
