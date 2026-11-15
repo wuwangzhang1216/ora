@@ -26,5 +26,13 @@
   "appVersionStatus": "Waiting for Review",
   "reviewSubmissionId": "08f091ec-9799-4c6c-a09b-74df71fd2151",
   "reviewSubmissionReceipt": "app-store/apple-review-submission-0.10.2.json",
-  "releaseMode": "Automatically release after App Review"
+  "releaseMode": "Automatically release after App Review",
+  "archiveIconMatchesApprovedA3": true,
+  "appStoreIconDisplayObservation": {
+    "reviewListThumbnail": "Still displays the prior ring icon",
+    "includedAssetsLightbox": "Did not display an image during this check",
+    "localArchiveAndCompatibilityIcon": "A3 verified",
+    "cause": "Not determined; not assumed to be caching",
+    "storefrontIconVerified": false
+  }
 }
