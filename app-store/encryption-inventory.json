@@ -1,0 +1,31 @@
+{
+  "candidate": "Ora 0.10.1 (15)",
+  "packageSha256": "1a57b684345649da968e84bfdc6c5ed7ede6f82e1f710720401a6f9bef190824",
+  "facts": [
+    "Ora network backends use Foundation URLSession, with HTTPS handled by the operating system.",
+    "API credentials are stored using Apple Security/Keychain services.",
+    "Hub dependencies use SHA256 for file validation and OAuth PKCE.",
+    "swift-crypto Package.swift has development=false, uses CRYPTO_IN_SWIFTPM without FORCE_BUILD_API on macOS, re-exporting system CryptoKit.",
+    "The actual .xcode-build swift-crypto checkout also has development=false and makes CCryptoBoringSSL targets conditional on non-Apple platforms. BoringSSL-named SafeCompare source is a constant-time byte comparison, not an encryption algorithm."
+  ],
+  "linkedSystemCryptoKitUndefinedSymbols": [
+    "_$s9CryptoKit12HashFunctionP6update13bufferPointerySW_tFTj",
+    "_$s9CryptoKit12HashFunctionP8finalize6DigestQzyFTj",
+    "_$s9CryptoKit12HashFunctionPxycfCTj",
+    "_$s9CryptoKit12SHA256DigestV10Foundation15ContiguousBytesAAMc",
+    "_$s9CryptoKit12SHA256DigestVMa",
+    "_$s9CryptoKit12SHA256DigestVSTAAMc",
+    "_$s9CryptoKit6SHA256V8finalizeAA0C6DigestVyF",
+    "_$s9CryptoKit6SHA256VAA12HashFunctionAAMc",
+    "_$s9CryptoKit6SHA256VACycfC",
+    "_$s9CryptoKit6SHA256VMa"
+  ],
+  "boringSSLMarkerMatches": 6,
+  "proposedAppleQuestionnaireAnswer": "Based on the inspected current macOS target: OS-provided TLS/Keychain/CryptoKit; no proprietary or separately implemented standard encryption observed. Confirm the current Apple questionnaire before submission.",
+  "questionnaireSubmitted": true,
+  "ownerDeclarationPending": false,
+  "appleSource": "https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations",
+  "limitation": "Technical inventory of current arm64 candidate, not legal advice or an export filing.",
+  "markerInterpretation": "All six matches are LLVM profiling metadata for SafeCompare_boring.swift byte comparison functions; not AES, ChaCha, TLS or BoringSSL encryption implementation symbols.",
+  "questionnaireResult": "For build 15, None of the algorithms mentioned above was saved. Apple cleared Missing Compliance and displayed Ready to Submit."
+}

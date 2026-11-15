@@ -2,7 +2,7 @@
 
 Target: **Ora 0.10.1 (15)**, `com.wangzhangwu.ora`, Apple Silicon, macOS 15+.
 
-This directory contains a distribution-signed package receipt and submission drafts, not an App Store approval or upload receipt. The website still advertises the released v0.10.0 DMG until a new public release is actually published.
+This directory contains local signing, Apple upload/processing receipts, and submission drafts. Apple has processed **0.10.1 (15)** and its TestFlight build status is **Ready to Submit**; this is not App Review approval or a public release. The website still advertises the released v0.10.0 DMG until a new public release is actually published.
 
 ## Prepared
 
@@ -34,7 +34,7 @@ APP_STORE_PROFILE="/absolute/path/Ora.provisionprofile" \
   ./package.sh --app-store
 ```
 
-Output: `.app-store/Ora.pkg`. Use Apple's Transporter to validate and upload the signed package. Upload processing, TestFlight checks, and App Review remain separate. The script deliberately fails when the required profile/identities are absent, wrong-platform, expired, or for a different app. No Developer ID notarization or DMG is used for this route.
+Output: `.app-store/Ora.pkg`. Use Apple's Transporter for this package, or Xcode Organizer for an app archive. This submission used Xcode after Transporter installation stalled; see `apple-upload.json` for the actual exported upload package. Upload processing, TestFlight checks, and App Review remain separate. The script deliberately fails when the required profile/identities are absent, wrong-platform, expired, or for a different app. No Developer ID notarization or DMG is used for this route.
 
 ## Published website pages
 
@@ -43,12 +43,15 @@ Output: `.app-store/Ora.pkg`. Use Apple's Transporter to validate and upload the
 
 ## Unresolved before submission
 
-- App Store Connect login, team and production App ID are confirmed. Both agreement updates were explicitly authorized by the owner. The developer-program update took effect; submitting the separate Paid Apps Agreement triggered Apple SMS two-factor authentication, which still requires the owner to finish in the web page. Until it takes effect, New App is blocked. App-name availability is not yet confirmed.
-- The formal package is ready locally but has not been uploaded or validated by Apple. App record creation, build processing and TestFlight/App Review remain outstanding.
-- The owner must supply real review contact details, confirm pricing/territories, and complete any current agreements and EU trader requirements in App Store Connect.
+Apple’s live **Add for Review** preflight currently lists **two blockers**: Content Rights Information, and publication of the App Privacy declaration. This check did not submit the app to reviewers. Build 15 and the three sandbox usage explanations are attached and confirmed after reloading.
+
+- App Store Connect record [6834983543](https://appstoreconnect.apple.com/apps/6834983543/distribution) has been created as **Ora — Live Translation**, macOS **0.10.1**, Prepare for Submission. English and Simplified Chinese names, subtitles, descriptions, keywords, URLs, three screenshots each, reviewer instructions, and manual release mode are saved. No app sign-in is required. Apple calculated **4+** from the completed age questionnaire; the app is not designated Made for Kids.
+- The owner completed SMS verification. The separate Paid Apps Agreement is **Pending User Info**, Free Apps Agreement **Active**. This no longer prevents creating the free Ora record; existing paid-contract tax/bank details were not changed.
+- Xcode Organizer uploaded the signed archive successfully and Apple processed build 15. Export compliance was completed based on the current macOS implementation; Missing Compliance cleared and the build is Ready to Submit. See `apple-upload.json` for the actual Xcode-exported package hash, signing certificate/profile, and state. The original `distribution-build.json` package was repackaged by Xcode; its hash is not the upload payload hash. TestFlight installation acceptance and App Review remain outstanding.
+- Owner-provided review contact details are saved privately in App Store Connect. Free pricing is saved and zero current prices verified; availability/territories and EU trader requirements still need confirmed owner information. Personal contact values are intentionally excluded from this public repository.
 - Privacy/support pages were approved by the owner and published to the production website. Browser navigation and exact source-content checks passed; see `website-deployment.json`.
 - Confirm third-party AI provider policies and retention before publishing privacy answers. The prepared manifest conservatively discloses optional audio and other user content for app functionality as linked to identity, since external API requests authenticate to a provider account. This is not a claim that default local processing collects speech.
-- Complete the live encryption and age-rating questionnaires. No exemption or age rating has been guessed in the draft.
+- Both live encryption and age-rating questionnaires are complete. `encryption-inventory.json` records why the macOS dependency uses system CryptoKit, correcting the earlier assumption that resolving swift-crypto meant BoringSSL encryption was bundled. The App Privacy label remains an **unpublished draft** pending provider-policy/owner review.
 - Physical microphone/Meeting input is hardware-limited, pending retest with an open notebook or external microphone. Only macOS 26.5 on one Apple Silicon Mac was exercised; minimum-version compatibility is not a real-device pass.
 
 ## Sources

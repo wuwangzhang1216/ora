@@ -27,7 +27,8 @@
   },
   "codeSignatureVerified": true,
   "packageSignatureVerified": true,
-  "appleUploadValidation": "not performed",
+  "appleUploadValidation": "This original package was not the upload payload. Xcode repackaged the signed archive with symbols and a managed matching-team profile; Apple accepted and processed that export. See apple-upload.json.",
   "uploaded": false,
-  "createdAt": "2026-11-15T02:15:02.556928+00:00"
+  "createdAt": "2026-11-15T02:15:02.556928+00:00",
+  "uploadReceipt": "app-store/apple-upload.json"
 }

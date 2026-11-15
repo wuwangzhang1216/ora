@@ -1,7 +1,7 @@
 {
   "version": "0.10.1",
   "build": "15",
-  "candidateStatus": "App Store distribution-signed Ora.pkg prepared; app signature, package signature, team, profile and entitlements verified locally. Not uploaded or Apple-validated.",
+  "candidateStatus": "Xcode uploaded Ora 0.10.1 (15); Apple processed it and cleared export compliance. Build Ready to Submit. App Review and public release not performed.",
   "sandboxEntitlements": {
     "com.apple.security.app-sandbox": true,
     "com.apple.security.device.audio-input": true,
@@ -79,11 +79,11 @@
     }
   ],
   "websiteStatus": "Owner-approved policy/support pages published successfully; browser navigation and exact approved-source checks passed",
-  "accountStatus": "Developer-program agreement accepted with explicit owner authorization. Paid Apps Agreement update also authorized and Agree submitted, but Apple requires owner SMS two-factor authentication before it takes effect.",
+  "accountStatus": "Owner completed Apple SMS verification. Paid Apps Agreement now Pending User Info; Free Apps Agreement Active. New App creation succeeded.",
   "microphoneAndMeeting": "hardware limited; user deferred physical microphone retest",
   "limitations": [
     "Xcode SwiftPM test target failed to resolve executable module Ora; SwiftPM test runner completed the suite instead",
-    "No Apple upload validation, TestFlight, or App Review yet",
+    "Apple upload/processing passed. No TestFlight installation acceptance or App Review yet",
     "macOS 15 real-device verification not performed",
     "External API end-to-end test not included; native cancellation tested"
   ],
@@ -121,7 +121,39 @@
   ],
   "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate",
   "websiteDeploymentJobId": "3",
-  "storeAppRecord": "Not created: Apple Paid Apps Agreement confirmation remains behind the owner SMS verification dialog. New App previously refused creation for this contract state.",
+  "storeAppRecord": {
+    "id": "6834983543",
+    "name": "Ora — Live Translation",
+    "platform": "macOS",
+    "version": "0.10.1",
+    "status": "Prepare for Submission",
+    "url": "https://appstoreconnect.apple.com/apps/6834983543/distribution",
+    "localizations": [
+      "en-US",
+      "zh-Hans"
+    ],
+    "screenshotsPerLocale": 3,
+    "categories": [
+      "Productivity",
+      "Utilities"
+    ],
+    "releaseMode": "Manual",
+    "signInRequired": false,
+    "privacyPolicyUrlSavedBothLocales": true,
+    "ageRating": "Apple calculated 4+, questionnaire saved",
+    "reviewContact": "Owner-provided name, email and phone saved and verified in App Store Connect; values excluded from public receipt",
+    "uploaded": true,
+    "submittedForReview": false,
+    "pricing": "Free; current zero prices verified after saving",
+    "appleBuildStatus": "Ready to Submit",
+    "privacy": "Unpublished draft saved; audio and other user content for App Functionality, linked, no tracking",
+    "buildAttached": true,
+    "sandboxUsageExplanationsSaved": [
+      "com.apple.security.device.audio-input",
+      "com.apple.security.network.client",
+      "com.apple.security.files.user-selected.read-write"
+    ]
+  },
   "productionAppID": {
     "bundleId": "com.wangzhangwu.ora",
     "teamId": "46KF5Z549N",
@@ -129,5 +161,17 @@
     "additionalCapabilities": "Only Apple default In-App Purchase capability; Ora has no purchases configured"
   },
   "distributionSigning": "Application and installer distribution certificates created with explicit owner authorization and installed in macOS Keychain; matching macOS App Store profile created and embedded; Ora.pkg generated and signatures verified.",
-  "distributionBuildReceipt": "app-store/distribution-build.json"
+  "distributionBuildReceipt": "app-store/distribution-build.json",
+  "encryptionInventory": "app-store/encryption-inventory.json",
+  "uploadToolAttempt": "Transporter installation encountered a blank Apple App Store confirmation sheet with no actionable verification fields; cancelled without account/security changes. Xcode recognized the manually assembled archive with matching dSYM UUID and started standard App Store Connect distribution.",
+  "appleUploadReceipt": "app-store/apple-upload.json",
+  "submissionPreflight": {
+    "attempt": "Add for Review; according to Apple this stages a draft and does not submit to reviewers",
+    "result": "Unable to Add for Review",
+    "requiredItems": [
+      "Content Rights Information in App Information",
+      "An Admin must provide app privacy practices in App Privacy (Publish draft)"
+    ],
+    "submittedForReview": false
+  }
 }

@@ -1,6 +1,6 @@
 # App Review notes — Ora 0.10.1 (15)
 
-Draft for App Store Connect. No account or payment is required to test local processing. The local package is now App Store distribution-signed and its signatures/profile have been verified. It has not yet been uploaded or processed by Apple.
+Draft for App Store Connect. No account or payment is required to test local processing. The local package is now App Store distribution-signed and its signatures/profile have been verified. Xcode has uploaded it and Apple has processed build 15 (Ready to Submit). It has not been submitted for App Review or publicly released.
 
 ## Where to find the app
 
@@ -30,4 +30,4 @@ Verified on one Apple Silicon Mac running macOS 26.5: enforced App Sandbox, loca
 
 Physical microphone and Meeting speech acceptance remain **hardware-limited, pending retest**: the test MacBook is in clamshell mode with the built-in microphone selected. Entering Listening without an error is not a microphone pass. macOS 15, other hardware, and Extra High/experimental recognizers have not been validated as part of this store preparation.
 
-Before submitting: attach an App Store distribution-signed package processed by Apple; complete contact, privacy, encryption, age-rating, pricing, and territory questions using confirmed owner/provider information; close or explicitly accept outstanding validation gaps. Do not paste private benchmark transcripts or API keys into review notes.
+Build 15 is uploaded and processed; owner-provided contact details, free pricing, encryption and age-rating answers are saved. Before submitting: finish availability/content-rights and privacy/provider confirmations, and close or explicitly accept outstanding validation gaps. Do not paste private benchmark transcripts or API keys into review notes.

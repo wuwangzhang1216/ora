@@ -1,0 +1,48 @@
+{
+  "version": "0.10.1",
+  "build": "15",
+  "bundleId": "com.wangzhangwu.ora",
+  "appStoreConnectId": "6834983543",
+  "buildId": "12aa05f1-4546-4390-8bbe-361221184192",
+  "method": "Xcode Organizer — App Store Connect distribution",
+  "sourceArchive": "macos/Ora/.app-store/Ora-0.10.1-15.xcarchive",
+  "sourceArchiveNote": "Assembled from already signed production app and matching dSYM; app code signature verified and binary/dSYM UUID matched before importing. Xcode recognized macOS App Archive and performed its standard distribution/upload workflow.",
+  "exportedPackage": "macos/Ora/.app-store/XcodeUpload-0.10.1-15/Ora.pkg",
+  "exportedPackageBytes": 39866265,
+  "exportedPackageSha256": "ffc06a52b4a6ffaf4d5d95544a85209c4c480c7ff594fa1499a165d370a41212",
+  "applicationCertificate": {
+    "SHA1": "055834D189B8EEE8B87B08B826B3C29469EC1C89",
+    "dateExpires": "2027-11-14",
+    "type": "Mac App Distribution"
+  },
+  "profile": {
+    "UUID": "a283c2cc-0455-44d7-be97-fe40b4a3d21f",
+    "dateExpires": "2027-11-14",
+    "name": "Mac Team Store Provisioning Profile: com.wangzhangwu.ora"
+  },
+  "team": {
+    "id": "46KF5Z549N",
+    "name": "wangzhang wu"
+  },
+  "entitlements": {
+    "com.apple.application-identifier": "46KF5Z549N.com.wangzhangwu.ora",
+    "com.apple.developer.team-identifier": "46KF5Z549N",
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.device.audio-input": true,
+    "com.apple.security.files.user-selected.read-write": true,
+    "com.apple.security.network.client": true,
+    "keychain-access-groups": [
+      "46KF5Z549N.com.wangzhangwu.ora"
+    ]
+  },
+  "uploadedSymbols": true,
+  "installerSignatureVerified": true,
+  "xcodeResult": "App upload complete: Ora 0.10.1 (15) uploaded",
+  "appleProcessed": true,
+  "testFlightBuildStatus": "Ready to Submit",
+  "exportCompliance": "Live build questionnaire saved: None of the algorithms mentioned above. Missing Compliance cleared. Technical evidence in encryption-inventory.json.",
+  "submittedForReview": false,
+  "testersInvited": false,
+  "released": false,
+  "observedAt": "2026-11-15T02:47:41.907562+00:00"
+}
