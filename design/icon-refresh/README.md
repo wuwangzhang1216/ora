@@ -1,5 +1,9 @@
 # Ora icon design preview
 
+**Rejected study.** The owner rejected this first direction. See
+[`research.md`](research.md) for the official reference study and revised brief.
+These previews are not the selected Ora icon.
+
 This is an unshipped design study. It does not modify the production icon, the
 submitted 0.10.1 (15) binary, installed apps, or public website assets.
 
