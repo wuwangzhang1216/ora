@@ -1,5 +1,5 @@
 {
-  "status": "Prepared locally; not submitted or uploaded",
+  "status": "Distribution-signed package prepared locally; app record creation pending Apple SMS verification; not uploaded or submitted",
   "bundleId": "com.wangzhangwu.ora",
   "sku": "ora-macos",
   "version": "0.10.1",

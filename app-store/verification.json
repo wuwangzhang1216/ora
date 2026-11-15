@@ -1,14 +1,14 @@
 {
   "version": "0.10.1",
   "build": "15",
-  "candidateStatus": "ad-hoc signed, no App Store profile; not uploadable",
+  "candidateStatus": "App Store distribution-signed Ora.pkg prepared; app signature, package signature, team, profile and entitlements verified locally. Not uploaded or Apple-validated.",
   "sandboxEntitlements": {
     "com.apple.security.app-sandbox": true,
     "com.apple.security.device.audio-input": true,
     "com.apple.security.files.user-selected.read-write": true,
     "com.apple.security.network.client": true
   },
-  "binarySha256": "6716fd7069ec8a0bc7609bcc8e8a4b55dc035c6abda6d85494c9bc2469c4580b",
+  "binarySha256": "82584b7e1d4c052ee52b4c500675f301cdb636730a89ff6929051242af8dc617",
   "regressionTests": {
     "executed": 194,
     "skipped": 6,
@@ -79,7 +79,7 @@
     }
   ],
   "websiteStatus": "Owner-approved policy/support pages published successfully; browser navigation and exact approved-source checks passed",
-  "accountStatus": "Apple Developer Program agreement accepted with explicit owner authorization; certificate and identifier access restored.",
+  "accountStatus": "Developer-program agreement accepted with explicit owner authorization. Paid Apps Agreement update also authorized and Agree submitted, but Apple requires owner SMS two-factor authentication before it takes effect.",
   "microphoneAndMeeting": "hardware limited; user deferred physical microphone retest",
   "limitations": [
     "Xcode SwiftPM test target failed to resolve executable module Ora; SwiftPM test runner completed the suite instead",
@@ -121,12 +121,13 @@
   ],
   "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate",
   "websiteDeploymentJobId": "3",
-  "storeAppRecord": "Not created: New App is now blocked by a separate outdated Paid Apps Agreement. Free Apps Agreement is Active. Owner confirmation requested for the separate contract.",
+  "storeAppRecord": "Not created: Apple Paid Apps Agreement confirmation remains behind the owner SMS verification dialog. New App previously refused creation for this contract state.",
   "productionAppID": {
     "bundleId": "com.wangzhangwu.ora",
     "teamId": "46KF5Z549N",
     "status": "Registered and verified in identifier list",
     "additionalCapabilities": "Only Apple default In-App Purchase capability; Ora has no purchases configured"
   },
-  "distributionSigning": "Mac App Distribution CSR upload page prepared; owner confirmation requested before creating application and installer signing credentials."
+  "distributionSigning": "Application and installer distribution certificates created with explicit owner authorization and installed in macOS Keychain; matching macOS App Store profile created and embedded; Ora.pkg generated and signatures verified.",
+  "distributionBuildReceipt": "app-store/distribution-build.json"
 }

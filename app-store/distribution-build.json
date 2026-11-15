@@ -1,0 +1,33 @@
+{
+  "version": "0.10.1",
+  "build": "15",
+  "bundleId": "com.wangzhangwu.ora",
+  "teamId": "46KF5Z549N",
+  "package": "macos/Ora/.app-store/Ora.pkg",
+  "packageBytes": 20730525,
+  "packageSha256": "1a57b684345649da968e84bfdc6c5ed7ede6f82e1f710720401a6f9bef190824",
+  "applicationSigner": "3rd Party Mac Developer Application: wangzhang wu (46KF5Z549N)",
+  "installerSigner": "3rd Party Mac Developer Installer: wangzhang wu (46KF5Z549N)",
+  "profileName": "Ora Mac App Store",
+  "profileUUID": "720793aa-03da-45cb-918a-719f28c299a1",
+  "profilePlatform": [
+    "OSX"
+  ],
+  "profileExpiry": "2027-11-15T01:46:32Z",
+  "entitlements": {
+    "com.apple.application-identifier": "46KF5Z549N.com.wangzhangwu.ora",
+    "com.apple.developer.team-identifier": "46KF5Z549N",
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.device.audio-input": true,
+    "com.apple.security.files.user-selected.read-write": true,
+    "com.apple.security.network.client": true,
+    "keychain-access-groups": [
+      "46KF5Z549N.com.wangzhangwu.ora"
+    ]
+  },
+  "codeSignatureVerified": true,
+  "packageSignatureVerified": true,
+  "appleUploadValidation": "not performed",
+  "uploaded": false,
+  "createdAt": "2026-11-15T02:15:02.556928+00:00"
+}
