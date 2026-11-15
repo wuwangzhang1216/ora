@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <title>Ora — conversation and captions</title>
+  <g fill="currentColor">
+    <path fill-rule="evenodd" d="M512 224C353 224 224 353 224 512C224 671 353 800 512 800C575 800 633 780 677 748L800 800L748 677C780 633 800 575 800 512C800 353 671 224 512 224ZM704 512A192 192 0 1 1 320 512A192 192 0 1 1 704 512Z"/>
+    <rect x="402" y="444" width="220" height="44" rx="22"/>
+    <rect x="402" y="536" width="160" height="44" rx="22"/>
+  </g>
+</svg>
