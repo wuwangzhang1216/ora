@@ -1,0 +1,62 @@
+{
+  "version": "0.10.2",
+  "build": "16",
+  "sourceCommit": "35d038474276e631fdbaca6146e71159090627af",
+  "githubRelease": "https://github.com/wuwangzhang1216/ora/releases/tag/v0.10.2",
+  "published": true,
+  "website": "https://main.d1cdtuylr567og.amplifyapp.com/",
+  "deployment": {
+    "provider": "AWS Amplify",
+    "jobId": "4",
+    "status": "SUCCEED"
+  },
+  "websiteContentChecks": [
+    {
+      "path": "index.html",
+      "status": 200,
+      "sha256": "114715b6e76950c27ab2d66b38c592f05a03d60dc8a66a2d6e919fea5d87ea06",
+      "matchesSource": true
+    },
+    {
+      "path": "favicon.svg",
+      "status": 200,
+      "sha256": "c6bbfbbacd858abc51ad13bc6d6abc54117534219be1cdc3cff44207c88c1099",
+      "matchesSource": true
+    },
+    {
+      "path": "screenshots/app-icon.png",
+      "status": 200,
+      "sha256": "53a34a6e7020493914b6021764fd475c83a12b56e5a62d1c4857928193a1908f",
+      "matchesSource": true
+    },
+    {
+      "path": "posters/github-banner.jpg",
+      "status": 200,
+      "sha256": "af07b1bf954d796a7099651e8bdff6df1c9bb2421d965b683b5a5f0131c8eaab",
+      "matchesSource": true
+    },
+    {
+      "path": "privacy.html",
+      "status": 200,
+      "sha256": "cb15ee51969d2baebd5fb0ca714d4a5510691733a85f4c51fc73c200cc051cf2",
+      "matchesSource": true
+    },
+    {
+      "path": "support.html",
+      "status": 200,
+      "sha256": "ef65c5cb85d410f923046c3830838db8cf4481e71b13c0ea0b1822b7951ae3b4",
+      "matchesSource": true
+    }
+  ],
+  "browserDownload": {
+    "browser": "Safari",
+    "savedFile": "Ora.dmg",
+    "complete": true,
+    "bytes": 25627136,
+    "sha256": "1f6c4435a73c986f0723e2da3ec63ae6c41d2bcf0dfd12811959d64c06018b4e",
+    "mountedVersion": "0.10.2 (16)",
+    "iconMatchesApprovedA3": true,
+    "signatureVerified": true
+  },
+  "verifiedAt": "2026-11-15T19:45:06.436726+00:00"
+}

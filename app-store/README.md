@@ -1,5 +1,15 @@
 # Mac App Store preparation
 
+## Current release — 0.10.2 (16), A3 icon
+
+**Apple confirmed 1 Item Submitted; 0.10.2 (16) is Waiting for Review.** The owner requested the A3 update and App Store release. The previous 0.10.1 submission was cancelled, its draft updated, and build 16 selected. Apple processed the new build and the existing system-encryption declaration was saved. Release is now **automatic after approval**, with all 175 countries or regions saved as **Available on App Release**. The existing free price schedule is retained. No App Review approval or live App Store release is claimed. See `apple-upload-0.10.2.json` and `apple-review-submission-0.10.2.json`.
+
+The public [GitHub release](https://github.com/wuwangzhang1216/ora/releases/tag/v0.10.2) and [website](https://main.d1cdtuylr567og.amplifyapp.com/) serve the notarized v0.10.2 DMG. Safari download, checksum, mounted version and A3 icon checks passed. See `../release-notes/v0.10.2-publication.json`.
+
+## Earlier submission — 0.10.1 (15)
+
+The notes below record the earlier preparation and submission as observed on November 14; its review submission was superseded by 0.10.2.
+
 Target: **Ora 0.10.1 (15)**, `com.wangzhangwu.ora`, Apple Silicon, macOS 15+.
 
 This directory contains local signing, Apple upload/processing receipts, and submission drafts. Apple has processed **0.10.1 (15)** and the owner-authorized review submission is now **Waiting for Review**; this is not App Review approval or a public release. The website still advertises the released v0.10.0 DMG until a new public release is actually published.

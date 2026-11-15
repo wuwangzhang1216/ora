@@ -1,0 +1,22 @@
+{
+  "id": "08f091ec-9799-4c6c-a09b-74df71fd2151",
+  "url": "https://appstoreconnect.apple.com/apps/6834983543/distribution/reviewsubmissions/details/08f091ec-9799-4c6c-a09b-74df71fd2151",
+  "version": "0.10.2",
+  "build": "16",
+  "buildId": "e6b80072-a494-4a05-8a5b-58b0438aa727",
+  "status": "Waiting for Review",
+  "appleConfirmation": "1 Item Submitted",
+  "observedAt": "2026-11-15T20:02:09.917449+00:00",
+  "ownerAuthorization": "Owner requested synchronizing the A3 icon, publishing the latest installer, and App Store release. Existing validation-gap acceptance and approved privacy/content-rights declarations remain applicable; no change to recognition or translation models in this icon update.",
+  "releaseMode": "Automatically release after App Review",
+  "released": false,
+  "availability": {
+    "countriesOrRegions": 175,
+    "status": "Available on App Release in all 175 countries or regions",
+    "futureCountriesIncluded": true
+  },
+  "pricing": "Existing free price schedule retained",
+  "replacesSubmission": "ec1a4f04-a487-48ee-a4d9-f01ad7903d26",
+  "previousVersion": "0.10.1 (15)",
+  "previousStatus": "Developer Rejected after owner-authorized cancellation to submit the new build"
+}
