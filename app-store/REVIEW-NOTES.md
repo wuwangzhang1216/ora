@@ -1,6 +1,6 @@
 # App Review notes — Ora 0.10.1 (15)
 
-Draft for App Store Connect. No account or payment is required to test local processing. The local package is now App Store distribution-signed and its signatures/profile have been verified. Xcode has uploaded it and Apple has processed build 15 (Ready to Submit). It has not been submitted for App Review or publicly released.
+Draft for App Store Connect. No account or payment is required to test local processing. The local package is now App Store distribution-signed and its signatures/profile have been verified. Xcode has uploaded it and Apple has processed build 15 (Ready to Submit). It has now been formally submitted for App Review with explicit owner authorization (Waiting for Review). It has not been publicly released.
 
 ## Where to find the app
 
@@ -30,4 +30,4 @@ Verified on one Apple Silicon Mac running macOS 26.5: enforced App Sandbox, loca
 
 Physical microphone and Meeting speech acceptance remain **hardware-limited, pending retest**: the test MacBook is in clamshell mode with the built-in microphone selected. Entering Listening without an error is not a microphone pass. macOS 15, other hardware, and Extra High/experimental recognizers have not been validated as part of this store preparation.
 
-Build 15 is uploaded and processed; owner-provided contact details, free pricing, encryption and age-rating answers are saved. Content rights and privacy declarations have been owner-confirmed and saved/published. The version is Ready for Review and staged in a draft submission; final Submit for Review is still pending. Before public release: confirm availability/territories and app-level EU trader status, and close or explicitly accept outstanding validation gaps. Do not paste private benchmark transcripts or API keys into review notes.
+Build 15 is uploaded and processed; owner-provided contact details, free pricing, encryption and age-rating answers are saved. Content rights and privacy declarations have been owner-confirmed and saved/published. The owner authorized final Submit for Review and accepted the disclosed validation gaps. Apple confirmed 1 Item Submitted; version 0.10.1 (15) is Waiting for Review. Before public release: confirm availability/territories and app-level EU trader status, and close or explicitly accept outstanding validation gaps. Do not paste private benchmark transcripts or API keys into review notes.

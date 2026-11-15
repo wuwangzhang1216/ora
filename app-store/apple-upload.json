@@ -41,13 +41,14 @@
   "appleProcessed": true,
   "testFlightBuildStatus": "Ready to Submit",
   "exportCompliance": "Live build questionnaire saved: None of the algorithms mentioned above. Missing Compliance cleared. Technical evidence in encryption-inventory.json.",
-  "submittedForReview": false,
+  "submittedForReview": true,
   "testersInvited": false,
   "released": false,
-  "observedAt": "2026-11-15T02:53:52.164645+00:00",
-  "appVersionStatus": "Ready for Review",
-  "draftSubmissionItemStatus": "Ready to Submit",
+  "observedAt": "2026-11-15T02:56:08.956494+00:00",
+  "appVersionStatus": "Waiting for Review",
   "privacyDeclarationPublished": true,
   "contentRightsSaved": true,
-  "finalSubmitForReviewClicked": false
+  "finalSubmitForReviewClicked": true,
+  "reviewSubmissionId": "ec1a4f04-a487-48ee-a4d9-f01ad7903d26",
+  "reviewSubmissionReceipt": "app-store/apple-review-submission.json"
 }

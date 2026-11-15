@@ -1,5 +1,5 @@
 {
-  "status": "App Store Connect record 6834983543: macOS 0.10.1 build 15 uploaded and processed; version Ready for Review; draft submission contains one Item Ready to Submit. Final Submit for Review not clicked; not released.",
+  "status": "Ora 0.10.1 (15) formally submitted to Apple with explicit owner authorization; 1 Item Submitted; Waiting for Review. Release remains manual after approval; not publicly released.",
   "bundleId": "com.wangzhangwu.ora",
   "sku": "ora-macos",
   "version": "0.10.1",
@@ -74,5 +74,6 @@
   },
   "appStoreConnectId": "6834983543",
   "appStoreConnectUrl": "https://appstoreconnect.apple.com/apps/6834983543/distribution",
-  "contentRights": "Owner explicitly confirmed necessary third-party content rights and authorized Yes; saved in App Information."
+  "contentRights": "Owner explicitly confirmed necessary third-party content rights and authorized Yes; saved in App Information.",
+  "reviewSubmissionUrl": "https://appstoreconnect.apple.com/apps/6834983543/distribution/reviewsubmissions/details/ec1a4f04-a487-48ee-a4d9-f01ad7903d26"
 }

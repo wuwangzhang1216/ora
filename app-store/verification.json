@@ -1,7 +1,7 @@
 {
   "version": "0.10.1",
   "build": "15",
-  "candidateStatus": "Xcode uploaded Ora 0.10.1 (15); Apple processed it and cleared export compliance. Build Ready to Submit. App Review and public release not performed.",
+  "candidateStatus": "Ora 0.10.1 (15) uploaded, processed and formally submitted to Apple after explicit owner approval; Waiting for Review. Not approved or publicly released.",
   "sandboxEntitlements": {
     "com.apple.security.app-sandbox": true,
     "com.apple.security.device.audio-input": true,
@@ -126,7 +126,7 @@
     "name": "Ora — Live Translation",
     "platform": "macOS",
     "version": "0.10.1",
-    "status": "Ready for Review",
+    "status": "Waiting for Review",
     "url": "https://appstoreconnect.apple.com/apps/6834983543/distribution",
     "localizations": [
       "en-US",
@@ -143,7 +143,7 @@
     "ageRating": "Apple calculated 4+, questionnaire saved",
     "reviewContact": "Owner-provided name, email and phone saved and verified in App Store Connect; values excluded from public receipt",
     "uploaded": true,
-    "submittedForReview": false,
+    "submittedForReview": true,
     "pricing": "Free; current zero prices verified after saving",
     "appleBuildStatus": "Ready to Submit",
     "privacy": "Published with explicit owner authorization; Apple displayed Published a few seconds ago.",
@@ -167,14 +167,13 @@
   "uploadToolAttempt": "Transporter installation encountered a blank Apple App Store confirmation sheet with no actionable verification fields; cancelled without account/security changes. Xcode recognized the manually assembled archive with matching dSYM UUID and started standard App Store Connect distribution.",
   "appleUploadReceipt": "app-store/apple-upload.json",
   "submissionPreflight": {
-    "result": "Passed after owner-approved Content Rights and App Privacy publication",
-    "draftSubmission": "Started by account holder on Nov 14, 2026 at 9:52 PM EST",
+    "result": "Passed; owner-authorized final Submit for Review completed; Apple confirmed 1 Item Submitted and Waiting for Review.",
     "items": [
       "macOS App 0.10.1 — 0.10.1 (15)"
     ],
-    "itemStatus": "Ready to Submit",
-    "finalSubmitForReviewClicked": false,
-    "submittedForReview": false,
+    "itemStatus": "Waiting for Review",
+    "finalSubmitForReviewClicked": true,
+    "submittedForReview": true,
     "remainingBeforeRelease": [
       "Owner selection of availability/territories",
       "Confirm app-level EU non-trader status reflects the owner’s activity; current value was inherited, not changed by the agent"
@@ -187,6 +186,8 @@
   },
   "ownerConfirmations": {
     "contentRights": "Explicitly confirmed necessary third-party content rights and authorized Yes in Apple form.",
-    "privacy": "Explicitly confirmed supported external-service policies match the prepared declaration and authorized Publish."
-  }
+    "privacy": "Explicitly confirmed supported external-service policies match the prepared declaration and authorized Publish.",
+    "finalReviewSubmission": "Owner explicitly authorized Submit for Review and accepted all disclosed validation gaps."
+  },
+  "reviewSubmissionReceipt": "app-store/apple-review-submission.json"
 }
