@@ -1,5 +1,9 @@
 # Ora icon studies — round 2
 
+These raster studies are not the latest layered iOS production direction.
+See [`../ios-current-direction.md`](../ios-current-direction.md). The 80%
+normalization below is a local legacy-Mac comparison, not an Apple iOS standard.
+
 Three original raster concepts generated using the built-in image-generation
 tool. Exact prompts and generation method are preserved in `prompts.json`.
 
