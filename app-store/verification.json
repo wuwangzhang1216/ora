@@ -79,7 +79,7 @@
     }
   ],
   "websiteStatus": "Owner-approved policy/support pages published successfully; browser navigation and exact approved-source checks passed",
-  "accountStatus": "App Store Connect login required; no App Store distribution identities/profile available",
+  "accountStatus": "Logged in to intended developer team; Apple agreement update blocks new-app creation and certificate/profile access. Review page opened for the owner; no agreement accepted by the agent.",
   "microphoneAndMeeting": "hardware limited; user deferred physical microphone retest",
   "limitations": [
     "Xcode SwiftPM test target failed to resolve executable module Ora; SwiftPM test runner completed the suite instead",
@@ -120,5 +120,6 @@
     }
   ],
   "distributionGate": "--app-store rejects missing App Store signing identity before building or replacing the local candidate",
-  "websiteDeploymentJobId": "3"
+  "websiteDeploymentJobId": "3",
+  "storeAppRecord": "Not created; New App displayed Agreement Update instead of the app form"
 }

@@ -43,7 +43,7 @@ Output: `.app-store/Ora.pkg`. Use Apple's Transporter to validate and upload the
 
 ## Unresolved before submission
 
-- App Store Connect login/app record/name availability have not yet been confirmed.
+- App Store Connect login and the intended developer team are confirmed. Creating the Ora app record is currently stopped by Apple’s required developer-program agreement update; the account holder must review and accept it before app creation and certificate/profile access are restored. App-name availability is not yet confirmed.
 - The local keychain has a Developer ID Application identity, but no App Store application/installer distribution identities. No macOS Ora App Store profile is installed.
 - The owner must supply real review contact details, confirm pricing/territories, and complete any current agreements and EU trader requirements in App Store Connect.
 - Privacy/support pages were approved by the owner and published to the production website. Browser navigation and exact source-content checks passed; see `website-deployment.json`.
